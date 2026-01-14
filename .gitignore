@@ -1,0 +1,7 @@
+.obsidian
+.git
+node_modules
+main.js
+manifest.json
+styles.css
+data.json
