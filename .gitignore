@@ -1,7 +1,7 @@
-.obsidian
-.git
-node_modules
-main.js
-manifest.json
-styles.css
+node_modules/
+
 data.json
+
+*.log
+*.tsbuildinfo
+.DS_Store

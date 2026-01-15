@@ -1,0 +1,10 @@
+{
+  "id": "obsidoist-plugin",
+  "name": "Obsidoist",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Task management with Todoist bidirectional sync.",
+  "author": "0ximst1ll",
+  "authorUrl": "https://github.com/0ximst1ll",
+  "isDesktopOnly": false
+}

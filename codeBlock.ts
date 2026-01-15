@@ -148,6 +148,8 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 
 			this.suppressServiceRefresh = true;
 			await this.service.syncFilterNow(filter);
+			const activeFile = this.app.workspace.getActiveFile();
+			if (activeFile) await this.syncManager.syncDown(activeFile);
 			if (source !== 'render') {
 				await this.refresh();
 			}
@@ -222,14 +224,16 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
             if (this.refreshBtn?.hasClass("obsidoist-spinning")) return; 
             
             this.refreshBtn?.addClass("obsidoist-spinning");
-            try {
-                const { filter } = this.parseSourceConfig();
-                await this.service.syncFilterNow(filter);
-                await this.refresh();
-            } finally {
-                setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
-            }
-        };
+			try {
+				const { filter } = this.parseSourceConfig();
+				await this.service.syncFilterNow(filter);
+				const activeFile = this.app.workspace.getActiveFile();
+				if (activeFile) await this.syncManager.syncDown(activeFile);
+				await this.refresh();
+			} finally {
+				setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+			}
+		};
 
         // Custom Edit Button
         this.editBtn = controls.createEl("button", { 
@@ -358,7 +362,8 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                 }
 
                 try {
-                    await this.service.setTaskCompletionRemoteNow(task.id, nextCompleted);
+                    if (nextCompleted) await this.service.closeTask(task.id);
+                    else await this.service.reopenTask(task.id);
                 } catch (err) {
                     new Notice(`Failed to update task: ${err instanceof Error ? err.message : String(err)}`);
 
@@ -374,6 +379,8 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                 if (filter && (this.settings.codeblockAutoRefreshFilterFromRemote ?? true)) {
                     void this.maybeRefreshFilterFromRemote('event');
                 }
+
+				void this.service.syncNow();
 
                 await this.refresh();
 

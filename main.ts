@@ -186,7 +186,11 @@ export default class ObsidoistPlugin extends Plugin {
 		if (!Number.isFinite(seconds) || seconds <= 0) return;
 
 		this.autoSyncIntervalId = window.setInterval(() => {
-			void this.todoistService.syncNow();
+			void (async () => {
+				await this.todoistService.syncNow();
+				const file = this.app.workspace.getActiveFile();
+				if (file) await this.syncManager.syncDown(file);
+			})();
 		}, seconds * 1000);
 	}
 

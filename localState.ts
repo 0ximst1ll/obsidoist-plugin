@@ -38,6 +38,16 @@ export type SyncOperation =
           nextRetryAt?: number;
           lastError?: string;
       }
+    | {
+          type: 'move';
+          opId: string;
+          id: TaskId;
+          projectId: string;
+          queuedAt: number;
+          attempts: number;
+          nextRetryAt?: number;
+          lastError?: string;
+      }
     | { type: 'close'; opId: string; id: TaskId; queuedAt: number; attempts: number; nextRetryAt?: number; lastError?: string }
     | { type: 'reopen'; opId: string; id: TaskId; queuedAt: number; attempts: number; nextRetryAt?: number; lastError?: string };
 
@@ -47,6 +57,7 @@ export interface LocalTaskRecord {
     isCompleted: boolean;
     projectId?: string;
     dueDate?: string;
+	isRecurring?: boolean;
     source: 'remote' | 'local';
     updatedAt: number;
     lastRemoteSeenAt?: number;
@@ -67,6 +78,7 @@ export interface ObsidoistLocalState {
     filterLastUsedAt: Record<string, number>;
     queue: SyncOperation[];
     status: SyncStatus;
+	lineShadowById: Record<TaskId, { content: string; isCompleted: boolean; projectId?: string; dueDate?: string }>;
 
     syncToken?: string;
     lastFullSyncAt?: number;
@@ -82,7 +94,8 @@ export function createDefaultLocalState(): ObsidoistLocalState {
         filterResults: {},
         filterLastUsedAt: {},
         queue: [],
-        status: {}
+        status: {},
+		lineShadowById: {}
     };
 }
 
@@ -115,7 +128,13 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
     if (!raw || typeof raw !== 'object') return base;
 
     const state: any = raw;
-    if (state.schemaVersion === 2) return state as ObsidoistLocalState;
+    if (state.schemaVersion === 2) {
+		const s = state as ObsidoistLocalState;
+		if (!s.lineShadowById || typeof s.lineShadowById !== 'object') {
+			(s as any).lineShadowById = {};
+		}
+		return s;
+	}
 
     const queueRaw: any[] = Array.isArray(state.queue) ? state.queue : [];
     const queue: SyncOperation[] = queueRaw
@@ -141,6 +160,19 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
                     lastError: typeof op.lastError === 'string' ? op.lastError : undefined
                 } as SyncOperation;
             }
+
+			if (op.type === 'move') {
+				return {
+					type: 'move',
+					opId,
+					id: String(op.id ?? ''),
+					projectId: String(op.projectId ?? ''),
+					queuedAt,
+					attempts,
+					nextRetryAt: Number.isFinite(op.nextRetryAt) ? op.nextRetryAt : undefined,
+					lastError: typeof op.lastError === 'string' ? op.lastError : undefined
+				} as SyncOperation;
+			}
 
             if (op.type === 'update') {
                 return {
@@ -181,6 +213,7 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
         filterLastUsedAt: (state.filterLastUsedAt && typeof state.filterLastUsedAt === 'object') ? state.filterLastUsedAt : {},
         queue,
         status: (state.status && typeof state.status === 'object') ? state.status : {},
+		lineShadowById: (state.lineShadowById && typeof state.lineShadowById === 'object') ? state.lineShadowById : {},
         syncToken: typeof state.syncToken === 'string' ? state.syncToken : undefined,
         lastFullSyncAt: state.lastFullSyncAt,
         lastProjectsSyncAt: state.lastProjectsSyncAt

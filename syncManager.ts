@@ -11,9 +11,10 @@ export class SyncManager {
     // Callback to set internal sync flag in main plugin
     private internalSyncCallback: ((isSyncing: boolean) => void) | null = null;
     
-    // Cache to track last known content to avoid redundant updates
-    // id -> content
-    private taskCache: Map<string, string> = new Map();
+    private sigEquals(a: { content: string; isCompleted: boolean; projectId?: string; dueDate?: string } | undefined, b: { content: string; isCompleted: boolean; projectId?: string; dueDate?: string } | undefined): boolean {
+        if (!a || !b) return false;
+        return a.content === b.content && a.isCompleted === b.isCompleted && (a.projectId ?? undefined) === (b.projectId ?? undefined) && (a.dueDate ?? undefined) === (b.dueDate ?? undefined);
+    }
     
     // Cache for projects
     private projects: Project[] = [];
@@ -110,32 +111,45 @@ export class SyncManager {
         return match?.[1];
     }
 
-    async scanAndSyncFile(file: TFile) {
-        if (!file) return;
-        console.log(`[Obsidoist] Scanning file: ${file.path}`);
-        const content = await this.app.vault.read(file);
-        const lines = content.split('\n');
-        let modified = false;
-        const newLines = [...lines];
+	async scanAndSyncFile(file: TFile, opts?: { primedCache?: boolean }) {
+		if (!file) return;
+		console.log(`[Obsidoist] Scanning file: ${file.path}`);
+		const content = await this.app.vault.read(file);
+		const lines = content.split('\n');
+		let modified = false;
+		const newLines = [...lines];
 
-        // Ensure we have projects loaded for mapping
-        await this.ensureProjects();
+		// Ensure we have projects loaded for mapping
+		await this.ensureProjects();
 
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+		if (!opts?.primedCache && /\[todoist_id:/.test(content) && this.service.getLastFullSyncAt() === undefined) {
+			await this.service.syncNow();
+			await this.scanAndSyncFile(file, { primedCache: true });
+			return;
+		}
+
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
             
             // Try detecting existing ID first with flexible regex
             const idMatch = line.match(this.idRegex);
             
-            if (idMatch) {
-                // Existing task with ID
-                const rawId = idMatch[1];
-                const existingId = this.service.resolveTaskId(rawId);
-                const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
+			if (idMatch) {
+				// Existing task with ID
+				const rawId = idMatch[1];
+				const existingId = this.service.resolveTaskId(rawId);
+				const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
+
+				if (!opts?.primedCache && /^\d+$/.test(existingId) && !this.service.getCachedTask(existingId)) {
+					await this.service.syncNow();
+					await this.scanAndSyncFile(file, { primedCache: true });
+					return;
+				}
 
                 if (rawId !== existingId) {
                     newLines[i] = newLines[i].replace(`[todoist_id:${rawId}]`, `[todoist_id:${existingId}]`);
                     modified = true;
+					this.service.moveLineShadow(rawId, existingId);
                 }
                 
                 if (statusMatch) {
@@ -143,29 +157,41 @@ export class SyncManager {
                     const isCompleted = status !== ' ';
                     
                     // Extract content - use consistent extraction method
-                    const taskContent = this.extractContent(line, true);
+					const taskContent = this.extractContent(line, true);
 					const dueDate = this.extractDueDate(line);
+					const rawContentWithTags = this.extractContent(line, false);
+					const tagProjectId = this.findProjectByTag(rawContentWithTags);
 
-                    const cached = this.service.getCachedTask(existingId);
+					const cached = this.service.getCachedTask(existingId);
 
-                    if (!cached || cached.content !== taskContent || cached.dueDate !== dueDate) {
-                        console.log(`[Obsidoist] Updating task content (local-first): ${taskContent}`);
-                        const success = await this.service.updateTask(existingId, taskContent, dueDate);
-                        if (success) {
-                            this.taskCache.set(existingId, taskContent);
-                            new Notice(`Updated Todoist task: ${taskContent.substring(0, 20)}...`);
-                        }
-                    }
+					const currentSig = { content: taskContent, dueDate, projectId: tagProjectId, isCompleted };
+					let prevSig = this.service.getLineShadow(existingId);
+					if (!prevSig && cached) {
+						prevSig = { content: cached.content, dueDate: cached.dueDate, projectId: cached.projectId, isCompleted: cached.isCompleted };
+					}
+					if (!prevSig) {
+						this.service.setLineShadow(existingId, currentSig);
+						continue;
+					}
+					if (this.sigEquals(prevSig, currentSig)) continue;
 
-                    if (!cached || cached.isCompleted !== isCompleted) {
-                        if (isCompleted) {
-                            await this.service.closeTask(existingId);
-                        } else {
-                            await this.service.reopenTask(existingId);
-                        }
-                    }
-                }
-            } else {
+					if (prevSig.content !== currentSig.content || (prevSig.dueDate ?? undefined) !== (currentSig.dueDate ?? undefined)) {
+						const success = await this.service.updateTask(existingId, taskContent, dueDate);
+						if (success) new Notice(`Updated Todoist task: ${taskContent.substring(0, 20)}...`);
+					}
+
+					if (currentSig.projectId && (prevSig.projectId ?? undefined) !== currentSig.projectId) {
+						await this.service.moveTask(existingId, currentSig.projectId);
+					}
+
+					if (prevSig.isCompleted !== currentSig.isCompleted) {
+						if (currentSig.isCompleted) await this.service.closeTask(existingId);
+						else await this.service.reopenTask(existingId);
+					}
+
+					this.service.setLineShadow(existingId, currentSig);
+				}
+			} else {
                 // No ID found, check if it is a NEW task candidate
                 const taskMatch = line.match(/^(\s*)-\s\[(.)\]/);
                 if (taskMatch && this.hasSyncTag(line)) {
@@ -189,13 +215,13 @@ export class SyncManager {
                     const apiProjectId = projectId === '' ? undefined : projectId;
 
                     console.log(`[Obsidoist] Creating task: ${cleanContent} in project ${apiProjectId || 'Inbox'}`);
-                    const task = await this.service.createTask(cleanContent, apiProjectId, dueDate);
-                    if (task) {
-                        newLines[i] = `${lines[i]} [todoist_id:${task.id}]`;
-                        modified = true;
-                        
-                        this.taskCache.set(task.id, cleanContent);
-                        new Notice(`Created Todoist task: ${cleanContent.substring(0, 20)}...`);
+					const task = await this.service.createTask(cleanContent, apiProjectId, dueDate);
+					if (task) {
+						newLines[i] = `${lines[i]} [todoist_id:${task.id}]`;
+						modified = true;
+
+						this.service.setLineShadow(task.id, { content: cleanContent, dueDate, projectId: apiProjectId, isCompleted });
+						new Notice(`Created Todoist task: ${cleanContent.substring(0, 20)}...`);
 
                         if (isCompleted) {
                              await this.service.closeTask(task.id);
@@ -211,7 +237,7 @@ export class SyncManager {
             try {
                 await this.app.vault.modify(file, newLines.join('\n'));
             } finally {
-                setTimeout(() => this.setInternalSync(false), 100);
+                setTimeout(() => this.setInternalSync(false), 1500);
             }
         }
     }
@@ -239,19 +265,22 @@ export class SyncManager {
                 if (rawId !== existingId) {
                     newLines[i] = newLines[i].replace(`[todoist_id:${rawId}]`, `[todoist_id:${existingId}]`);
                     modified = true;
+					this.service.moveLineShadow(rawId, existingId);
                 }
 
-                if (cachedTask) {
-                    const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
-                    if (statusMatch) {
-                        const currentStatus = statusMatch[2];
-                        const remoteStatus = cachedTask.isCompleted ? 'x' : ' ';
-                        
-                        // Extract local content to compare
-                        const localContent = this.extractContent(line, true);
-                        const remoteContent = cachedTask.content;
-                        
-                        let lineModified = false;
+                    if (cachedTask) {
+                        const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
+                        if (statusMatch) {
+                            const currentStatus = statusMatch[2];
+                            const remoteStatus = cachedTask.isCompleted ? 'x' : ' ';
+                            
+                            // Extract local content to compare
+                            const localContent = this.extractContent(line, true);
+                            const remoteContent = cachedTask.content;
+						const localDueDate = this.extractDueDate(line);
+						const remoteDueDate = cachedTask.dueDate;
+                            
+                            let lineModified = false;
                         
                         // Check status
                         if (currentStatus !== remoteStatus) {
@@ -259,54 +288,76 @@ export class SyncManager {
                             lineModified = true;
                         }
                         
-                        // Check content
-                        if (localContent !== remoteContent) {
-                            console.log(`[Obsidoist] Task ${existingId} content changed: ${localContent} -> ${remoteContent}`);
-                            lineModified = true;
-                            this.taskCache.set(existingId, remoteContent);
-                        } else {
-                             this.taskCache.set(existingId, remoteContent);
-                        }
-                        
-                        if (lineModified) {
-                            const indentMatch = line.match(/^(\s*)-\s/);
-                            const indent = indentMatch ? indentMatch[1] : '';
-                            
-                            // Reconstruct line with original project tags
-                            let projectTags = "";
-                            for (const project of this.projects) {
-                                const normalizedProjectName = project.name.replace(/\s+/g, '');
-                                const tag = `#${normalizedProjectName}`;
-                                if (new RegExp(tag, 'i').test(line)) {
-                                    const match = line.match(new RegExp(tag, 'i'));
-                                    if (match) {
-                                        projectTags += " " + match[0];
-                                    }
-                                }
-                            }
-                            
-                            newLines[i] = `${indent}- [${remoteStatus}] ${remoteContent} ${this.settings.syncTag}${projectTags} [todoist_id:${existingId}]`;
-                            newLines[i] = newLines[i].replace(/\s+/g, ' ');
-                            
-                            modified = true;
-                        }
-                    }
-                } else {
-                    const lastFullSyncAt = this.service.getLastFullSyncAt();
-                    const isFresh = lastFullSyncAt && (Date.now() - lastFullSyncAt) < 300000;
+							// Check content
+							if (localContent !== remoteContent) {
+								console.log(`[Obsidoist] Task ${existingId} content changed: ${localContent} -> ${remoteContent}`);
+								lineModified = true;
+							}
 
-                    if (isFresh && /^\d+$/.test(existingId)) {
-                        console.log(`[Obsidoist] Task ${existingId} not found in cache after recent sync. Assuming completed.`);
-                        const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
-                        if (statusMatch) {
-                            const currentStatus = statusMatch[2];
-                            if (currentStatus !== 'x') {
-                                newLines[i] = line.replace(/^(\s*-\s\[)(.)(\])/, '$1x$3');
+						// Check due date
+						if ((localDueDate ?? undefined) !== (remoteDueDate ?? undefined)) {
+							lineModified = true;
+						}
+
+						// Check project
+						let localProjectId: string | undefined = undefined;
+						for (const project of this.projects) {
+							const normalizedProjectName = project.name.replace(/\s+/g, '');
+							const tag = `#${normalizedProjectName}`;
+							if (new RegExp(tag, 'i').test(line)) {
+								localProjectId = project.id;
+								break;
+							}
+						}
+						if ((localProjectId ?? undefined) !== (cachedTask.projectId ?? undefined)) {
+							lineModified = true;
+						}
+                            
+                            if (lineModified) {
+                                const indentMatch = line.match(/^(\s*)-\s/);
+                                const indent = indentMatch ? indentMatch[1] : '';
+
+							let dueSuffix = '';
+							if (remoteDueDate) {
+								dueSuffix = ` 🗓 ${remoteDueDate}`;
+							}
+
+							let projectTag = '';
+							if (cachedTask.projectId) {
+								const p = this.projects.find(x => x.id === cachedTask.projectId);
+								if (p) projectTag = ` #${p.name.replace(/\s+/g, '')}`;
+							}
+
+							newLines[i] = `${indent}- [${remoteStatus}] ${remoteContent}${dueSuffix} ${this.settings.syncTag}${projectTag} [todoist_id:${existingId}]`;
+							newLines[i] = newLines[i].replace(/\s+/g, ' ');
+                                
                                 modified = true;
                             }
                         }
-                    }
-                }
+                    } else {
+                    const lastFullSyncAt = this.service.getLastFullSyncAt();
+                    const isFresh = lastFullSyncAt && (Date.now() - lastFullSyncAt) < 300000;
+
+					if (isFresh && /^\d+$/.test(existingId)) {
+						console.log(`[Obsidoist] Task ${existingId} not found in cache after recent sync. Assuming completed.`);
+						const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
+						if (statusMatch) {
+							const currentStatus = statusMatch[2];
+							if (currentStatus !== 'x') {
+								newLines[i] = line.replace(/^(\s*-\s\[)(.)(\])/, '$1x$3');
+								modified = true;
+							}
+
+							const basisLine = modified ? newLines[i] : line;
+							this.service.setLineShadow(existingId, {
+								content: this.extractContent(basisLine, true),
+								dueDate: this.extractDueDate(basisLine),
+								projectId: this.findProjectByTag(this.extractContent(basisLine, false)),
+								isCompleted: true
+							});
+						}
+					}
+				}
             }
         }
         
@@ -316,7 +367,7 @@ export class SyncManager {
             try {
                 await this.app.vault.modify(file, newLines.join('\n'));
             } finally {
-                setTimeout(() => this.setInternalSync(false), 100);
+                setTimeout(() => this.setInternalSync(false), 1500);
             }
         } else {
             console.log(`[Obsidoist] No changes needed for file.`);
