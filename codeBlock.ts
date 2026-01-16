@@ -1,4 +1,5 @@
 import { MarkdownPostProcessorContext, MarkdownRenderChild, App, Notice, setIcon, MarkdownView } from "obsidian";
+import { debug } from './logger';
 import { TodoistService } from "./todoistService";
 import { SyncManager } from "./syncManager";
 import type { ObsidoistSettings } from "./settings";
@@ -64,7 +65,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         
         // Register event listener for refresh
         this.registerEvent(this.service.on('refresh', () => {
-            console.log("[Obsidoist] View received refresh event. Re-rendering.");
+			debug('View received refresh event. Re-rendering.');
 			if (this.suppressServiceRefresh) return;
             
             // Trigger animation on auto-refresh too
@@ -77,7 +78,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
             });
 
 			const { filter } = this.parseSourceConfig();
-			if (filter && (this.settings.codeblockAutoRefreshFilterFromRemote ?? true)) {
+			if (filter) {
 				void this.maybeRefreshFilterFromRemote('event');
 			}
         }));
@@ -124,7 +125,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 		this.autoRefreshIntervalId = window.setInterval(() => {
 			void this.refresh();
 			const { filter } = this.parseSourceConfig();
-			if (filter && (this.settings.codeblockAutoRefreshFilterFromRemote ?? true)) {
+			if (filter) {
 				void this.maybeRefreshFilterFromRemote('interval');
 			}
 		}, seconds * 1000);
@@ -266,7 +267,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
     // Ensure DOM is healthy before updates
     private ensureDom() {
         if (!this.wrapper || !this.container.contains(this.wrapper)) {
-            console.log("[Obsidoist] DOM missing or detached, rebuilding...");
+			debug('DOM missing or detached, rebuilding...');
             this.buildDom();
         }
     }
@@ -283,7 +284,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                 titleEl.textContent = name; // If empty, it collapses naturally
             }
 
-			if (filter && (this.settings.codeblockAutoRefreshFilterFromRemote ?? true)) {
+			if (filter) {
 				await this.maybeRefreshFilterFromRemote('render');
 			}
 
@@ -376,7 +377,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                 }
 
                 const { filter } = this.parseSourceConfig();
-                if (filter && (this.settings.codeblockAutoRefreshFilterFromRemote ?? true)) {
+			if (filter) {
                     void this.maybeRefreshFilterFromRemote('event');
                 }
 

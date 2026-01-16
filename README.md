@@ -2,20 +2,71 @@
 
 [中文说明](README.zh-CN.md)
 
-Obsidian plugin for task management with Todoist sync.
+Obsidoist is an Obsidian plugin that lets you manage Todoist tasks in plain text.
 
-This project currently uses a **local-first** sync strategy: tasks are cached locally, edits are queued locally, and then synced to Todoist in the background.
+Write tasks as normal Markdown checkboxes, sync them to Todoist, and pull changes back into your notes.
+
+This plugin uses a **local-first** sync strategy: tasks are cached locally, edits are queued locally, and then synced to Todoist in the background.
 
 ## Features
 
-- Render a Todoist task list inside an Obsidian code block.
-- Create/update/complete tasks from markdown (via a sync tag).
-- Local-first sync with a persistent offline queue.
-- Configurable auto-sync interval and a manual “Sync now” action.
+- Two-way sync between Markdown tasks and Todoist.
+- Create / update / complete / reopen tasks from Markdown lines (via a sync tag).
+- Set due date and project using simple inline markers.
+- Render a task list inside an Obsidian code block (including Todoist filters).
+- Local-first cache with a persistent offline queue.
+
+## Quick start
+
+1) Install the plugin and set your Todoist API token.
+2) Add `#todoist` to a Markdown task line.
+3) Wait for auto sync (or click “Sync now”).
+4) The plugin will append `[todoist_id:...]` to bind the line to Todoist.
 
 ## Usage
 
-### 1) Render a task list (code block)
+### Markdown tasks (create / update / complete)
+
+Mark any Markdown checkbox line with your sync tag (default: `#todoist`):
+
+```md
+- [ ] Buy milk #todoist
+- [x] Pay rent #todoist
+```
+
+After syncing, the plugin appends an ID marker:
+
+```md
+- [ ] Buy milk #todoist [todoist_id:123456789]
+```
+
+Notes:
+
+- New tasks may temporarily use a local ID like `[todoist_id:local-...]` until they are created on Todoist.
+- If a task is deleted on Todoist, the plugin will remove `[todoist_id:...]` from the note and leave a normal Markdown task.
+
+### Due dates
+
+Add a due date in `YYYY-MM-DD` format:
+
+```md
+- [ ] Submit report 🗓 2026-01-16 #todoist
+```
+
+Accepted calendar markers: `🗓`, `🗓️`, `📅`.
+
+### Projects
+
+Add a project tag using the project name without spaces (case-insensitive):
+
+```md
+- [ ] Fix bug #todoist #Work
+- [ ] Buy groceries #todoist #Personal
+```
+
+New tasks will be created in `Default Project` if set; otherwise they go to Inbox.
+
+### Code blocks (task list)
 
 Create a code block like this:
 
@@ -27,54 +78,53 @@ name: My Tasks
 
 - `filter:` is a Todoist filter expression.
 - `limit:` (optional) limits the maximum number of tasks displayed.
-- The list renders from the local cache. Clicking the refresh button will sync and fetch tasks for that filter.
-
-### 2) Sync tasks from markdown lines
-
-Add tasks in your note using the configured sync tag (default: `#todoist`). For example:
-
-```md
-- [ ] Buy milk #todoist
-- [x] Pay rent #todoist
-```
-
-After syncing, the plugin appends an ID marker to bind the line to a Todoist task:
-
-```md
-- [ ] Buy milk #todoist [todoist_id:123456789]
-```
-
-Notes:
-
-- New tasks may temporarily use a local ID like `[todoist_id:local-...]` until they are created on Todoist.
-- The plugin will later replace the local ID with the real remote ID automatically.
+- For `filter:` blocks, the plugin fetches the latest results from Todoist during refresh (and caches them locally).
 
 ## Settings
 
 Open Obsidian → Settings → Community plugins → Obsidoist.
 
+### Basic
 - `Todoist API Token`: from Todoist Settings → Integrations.
-- `Sync Tag`: markdown tag that marks lines for syncing.
-- `Default Project`: where new tasks are created by default.
-- `Auto sync interval (seconds)`: set `0` to disable background sync.
-- `Sync now`: flush local pending changes and refresh cached tasks.
+- `Default Project`: default destination for new tasks (empty = Inbox).
+- `Sync Tag`: tag that marks Markdown lines for syncing.
 
-## How sync works (current)
+### Sync
+- `Codeblock auto refresh (seconds)`: how often code blocks refresh themselves (0 = disable).
+- `Auto sync interval (seconds)`: background sync interval (0 = disable).
+- `Sync now`: flush pending local changes and refresh tasks.
+- `Sync status`: quick overview of queue / cache / last sync.
+- `Todoist Sync API`: connectivity test.
+- `Use Sync API`: use Todoist Sync API for incremental sync.
 
-- The plugin stores a persistent local cache of tasks and projects.
-- All edits (create/update/close/reopen) are applied to the local cache first and appended to a local queue.
-- A background timer (configurable) flushes the queue to Todoist and refreshes the local cache.
-- Code blocks render from local cache. For `filter:` blocks, refresh will fetch the remote filter result and cache it.
-- Completing/uncompleting a task from a code block sends the change to Todoist immediately.
+### Cache
+- `Filter cache retention (days)`: how long cached filter results are kept (0 = disable age-based pruning).
+- `Max cached filters`: maximum number of cached filter result sets (LRU).
+- `Maintenance (advanced)`: cache/queue cleanup utilities.
 
-## Development
+### Developer
+- `Debug logging`: enable verbose logs in the developer console.
+
+## Installation
+
+### Recommended (release build)
+
+1) Download the latest release.
+2) Copy `main.js`, `manifest.json`, `styles.css` into:
+
+`<your vault>/.obsidian/plugins/obsidoist-plugin/`
+
+3) Restart Obsidian and enable the plugin in Community plugins.
+
+### From source
+
+Clone this repo into `<your vault>/.obsidian/plugins/obsidoist-plugin/`, then run:
 
 ```bash
 npm install
 npm run build
 ```
 
-## Limitations
+## License
 
-- Todoist “completed history / archive” is not fully mirrored locally yet (depends on the API endpoints available).
-- For `filter:` code blocks, the plugin caches the remote filter result after a refresh; offline mode shows the last cached result.
+MIT

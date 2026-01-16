@@ -140,6 +140,37 @@ export class TodoistService extends Events {
         return { tasks, filters, projects };
     }
 
+	getIdAliasMapKeys(): TaskId[] {
+		return Object.keys(this.localState.idAliasMap ?? {}) as TaskId[];
+	}
+
+	getLocalIdsReferencedInState(): Set<TaskId> {
+		const referenced = new Set<TaskId>();
+		for (const id of Object.keys(this.localState.tasksById ?? {})) referenced.add(id);
+		for (const op of this.localState.queue ?? []) {
+			if (op.type === 'create') referenced.add(op.localId);
+			else referenced.add(this.resolveId(op.id));
+		}
+		for (const ids of Object.values(this.localState.filterResults ?? {})) {
+			for (const id of ids) referenced.add(this.resolveId(id));
+		}
+		for (const id of Object.keys(this.localState.lineShadowById ?? {})) referenced.add(id as TaskId);
+		return referenced;
+	}
+
+	pruneIdAliasMap(keepLocalIds: Set<TaskId>): number {
+		const before = Object.keys(this.localState.idAliasMap ?? {}).length;
+		for (const localId of Object.keys(this.localState.idAliasMap ?? {})) {
+			if (keepLocalIds.has(localId)) continue;
+			delete this.localState.idAliasMap[localId];
+		}
+		const after = Object.keys(this.localState.idAliasMap ?? {}).length;
+		if (after !== before) {
+			this.requestPersist();
+		}
+		return before - after;
+	}
+
     clearQueue() {
         this.localState.queue = [];
         this.requestPersist();
@@ -150,25 +181,11 @@ export class TodoistService extends Events {
         const now = this.now();
         const cutoff = now - Math.max(0, opts.completedRetentionDays) * 24 * 60 * 60 * 1000;
 
-        const pinnedIds = new Set<TaskId>();
-        for (const ids of Object.values(this.localState.filterResults)) {
-            for (const id of ids) pinnedIds.add(this.resolveId(id));
-        }
-        for (const op of this.localState.queue) {
-            if (op.type === 'create') pinnedIds.add(op.localId);
-            else pinnedIds.add(this.resolveId(op.id));
-        }
-        for (const [localId, remoteId] of Object.entries(this.localState.idAliasMap)) {
-            pinnedIds.add(localId);
-            pinnedIds.add(remoteId);
-        }
-
-        for (const [id, task] of Object.entries(this.localState.tasksById)) {
-            if (pinnedIds.has(id)) continue;
-            if (!task.isCompleted) continue;
-            if (task.updatedAt >= cutoff) continue;
-            delete this.localState.tasksById[id];
-        }
+		for (const [filter, lastUsedAt] of Object.entries(this.localState.filterLastUsedAt)) {
+			if (lastUsedAt >= cutoff) continue;
+			delete this.localState.filterResults[filter];
+			delete this.localState.filterLastUsedAt[filter];
+		}
 
         const filterEntries = Object.entries(this.localState.filterLastUsedAt);
         filterEntries.sort((a, b) => b[1] - a[1]);
@@ -243,11 +260,11 @@ export class TodoistService extends Events {
         return this.resolveId(id);
     }
 
-    getCachedTask(id: TaskId): { id: string; content: string; isCompleted: boolean; projectId?: string; dueDate?: string } | null {
+    getCachedTask(id: TaskId): { id: string; content: string; isCompleted: boolean; projectId?: string; dueDate?: string; isDeleted?: boolean } | null {
         const canonical = this.resolveId(id);
         const t = this.localState.tasksById[canonical];
         if (!t) return null;
-        return { id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId, dueDate: t.dueDate };
+        return { id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId, dueDate: t.dueDate, isDeleted: t.isDeleted };
     }
 
     getLastFullSyncAt(): number | undefined {
@@ -432,6 +449,7 @@ export class TodoistService extends Events {
             projectId,
             dueDate,
             isRecurring: false,
+			isDeleted: false,
             source: 'local',
             updatedAt: now
         };
@@ -481,6 +499,7 @@ export class TodoistService extends Events {
                 content,
                 isCompleted: false,
                 dueDate,
+				isDeleted: false,
                 source: 'local',
                 updatedAt: now
             };
@@ -624,14 +643,20 @@ export class TodoistService extends Events {
             const hasPending = this.hasPendingOpsForId(id);
 
             if (it.is_deleted) {
-                if (!hasPending) {
-                    const existing = this.localState.tasksById[id];
-                    if (existing) {
-                        existing.isCompleted = true;
-                        existing.source = 'remote';
-                        existing.updatedAt = now;
-                        existing.lastRemoteSeenAt = now;
-                    }
+                const existing = this.localState.tasksById[id];
+                if (existing) {
+                    existing.isDeleted = true;
+                    existing.isCompleted = true;
+                    existing.source = 'remote';
+                    existing.updatedAt = now;
+                    existing.lastRemoteSeenAt = now;
+
+					const before = this.localState.queue.length;
+					this.localState.queue = this.localState.queue.filter(op => {
+						if (op.type === 'create') return op.localId !== id;
+						return this.resolveId(op.id) !== id;
+					});
+					if (this.localState.queue.length !== before) this.requestPersist();
                 }
                 continue;
             }
@@ -650,6 +675,7 @@ export class TodoistService extends Events {
                     projectId: it.project_id ? String(it.project_id) : undefined,
                     dueDate,
                     isRecurring,
+					isDeleted: false,
                     source: 'remote',
                     updatedAt: now,
                     lastRemoteSeenAt: now
@@ -665,6 +691,7 @@ export class TodoistService extends Events {
             local.projectId = it.project_id ? String(it.project_id) : undefined;
             local.dueDate = dueDate;
             local.isRecurring = isRecurring;
+			local.isDeleted = false;
             local.source = 'remote';
             local.updatedAt = now;
         }
@@ -877,6 +904,7 @@ export class TodoistService extends Events {
                     projectId: (task as any).projectId ?? (task as any).project_id,
                     dueDate: (task as any).due?.date ?? ((task as any).due?.datetime ? String((task as any).due.datetime).slice(0, 10) : undefined),
                     isRecurring: Boolean((task as any).due?.isRecurring ?? (task as any).due?.is_recurring),
+					isDeleted: false,
                     source: 'remote',
                     updatedAt: now,
                     lastRemoteSeenAt: now
@@ -934,6 +962,7 @@ export class TodoistService extends Events {
                     projectId: (task as any).projectId ?? (task as any).project_id,
                     dueDate: (task as any).due?.date ?? ((task as any).due?.datetime ? String((task as any).due.datetime).slice(0, 10) : undefined),
                     isRecurring: Boolean((task as any).due?.isRecurring ?? (task as any).due?.is_recurring),
+					isDeleted: false,
                     source: 'remote',
                     updatedAt: now,
                     lastRemoteSeenAt: now

@@ -8685,7 +8685,7 @@ __export(main_exports, {
   default: () => ObsidoistPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // settings.ts
 var import_obsidian = require("obsidian");
@@ -8698,7 +8698,7 @@ var DEFAULT_SETTINGS = {
   maxFilterCacheEntries: 50,
   useSyncApi: true,
   codeblockAutoRefreshSeconds: 60,
-  codeblockAutoRefreshFilterFromRemote: true
+  debugLogging: false
 };
 var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
@@ -8709,18 +8709,42 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Obsidoist Settings" });
+    containerEl.createEl("h3", { text: "Basic" });
     new import_obsidian.Setting(containerEl).setName("Todoist API Token").setDesc("Your Todoist API token. You can find it in Todoist Settings > Integrations.").addText((text) => text.setPlaceholder("Enter your token").setValue(this.plugin.settings.todoistToken).onChange(async (value) => {
       this.plugin.settings.todoistToken = value;
       await this.plugin.saveSettings();
       this.display();
     }));
-    new import_obsidian.Setting(containerEl).setName("Use Sync API").setDesc("Recommended for local-first clients. Uses Todoist Sync API for incremental sync.").addToggle((toggle) => {
-      var _a;
-      return toggle.setValue((_a = this.plugin.settings.useSyncApi) != null ? _a : true).onChange(async (value) => {
-        this.plugin.settings.useSyncApi = value;
-        await this.plugin.saveSettings();
+    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default Project").setDesc("New tasks will be created in this project by default. Leave empty for Inbox.");
+    if (this.plugin.settings.todoistToken) {
+      this.plugin.todoistService.getProjects().then((projects) => {
+        projectSetting.addDropdown((dropdown) => {
+          dropdown.addOption("", "Inbox");
+          projects.forEach((project) => {
+            if (project.name !== "Inbox")
+              dropdown.addOption(project.id, project.name);
+          });
+          dropdown.setValue(this.plugin.settings.defaultProjectId);
+          dropdown.onChange(async (value) => {
+            this.plugin.settings.defaultProjectId = value;
+            await this.plugin.saveSettings();
+          });
+        });
+      }).catch(() => {
+        projectSetting.setDesc("Failed to load projects. Check your API token.");
+        projectSetting.addText((text) => text.setPlaceholder("Project ID").setValue(this.plugin.settings.defaultProjectId).onChange(async (value) => {
+          this.plugin.settings.defaultProjectId = value;
+          await this.plugin.saveSettings();
+        }));
       });
-    });
+    } else {
+      projectSetting.setDesc("Enter API token to select project.");
+    }
+    new import_obsidian.Setting(containerEl).setName("Sync Tag").setDesc("The tag used to identify tasks that should be synced with Todoist.").addText((text) => text.setPlaceholder("#todoist").setValue(this.plugin.settings.syncTag).onChange(async (value) => {
+      this.plugin.settings.syncTag = value;
+      await this.plugin.saveSettings();
+    }));
+    containerEl.createEl("h3", { text: "Sync" });
     new import_obsidian.Setting(containerEl).setName("Codeblock auto refresh (seconds)").setDesc("How often obsidoist code blocks refresh themselves. Set 0 to disable.").addText((text) => {
       var _a;
       return text.setPlaceholder("60").setValue(String((_a = this.plugin.settings.codeblockAutoRefreshSeconds) != null ? _a : 60)).onChange(async (value) => {
@@ -8730,17 +8754,6 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian.Setting(containerEl).setName("Codeblock filter: always fetch from remote").setDesc("When a code block has filter:, periodically fetch latest tasks from Todoist instead of relying only on local cache.").addToggle((toggle) => {
-      var _a;
-      return toggle.setValue((_a = this.plugin.settings.codeblockAutoRefreshFilterFromRemote) != null ? _a : true).onChange(async (value) => {
-        this.plugin.settings.codeblockAutoRefreshFilterFromRemote = value;
-        await this.plugin.saveSettings();
-      });
-    });
-    new import_obsidian.Setting(containerEl).setName("Sync Tag").setDesc("The tag used to identify tasks that should be synced with Todoist.").addText((text) => text.setPlaceholder("#todoist").setValue(this.plugin.settings.syncTag).onChange(async (value) => {
-      this.plugin.settings.syncTag = value;
-      await this.plugin.saveSettings();
-    }));
     new import_obsidian.Setting(containerEl).setName("Auto sync interval (seconds)").setDesc("How often to sync in background. Set 0 to disable.").addText((text) => {
       var _a;
       return text.setPlaceholder("60").setValue(String((_a = this.plugin.settings.autoSyncIntervalSeconds) != null ? _a : 60)).onChange(async (value) => {
@@ -8760,6 +8773,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         }
         this.plugin.todoistService.triggerRefresh();
         new import_obsidian.Notice("Obsidoist: sync completed");
+        this.display();
       } catch (e) {
         new import_obsidian.Notice(`Obsidoist: sync failed: ${(_a = e == null ? void 0 : e.message) != null ? _a : e}`);
       }
@@ -8770,7 +8784,20 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("Sync status").setDesc(
       `Queue: ${queueLength} | Tasks: ${cache.tasks} | Filters: ${cache.filters} | Last success: ${status.lastSuccessfulSyncAt ? new Date(status.lastSuccessfulSyncAt).toLocaleString() : "Never"}${status.lastErrorMessage ? ` | Last error: ${status.lastErrorMessage}` : ""}`
     );
-    new import_obsidian.Setting(containerEl).setName("Cache retention").setDesc("Controls how much completed tasks and filter results are kept locally.").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("Todoist Sync API").setDesc("Test whether Todoist Sync API is reachable from your current Obsidian environment.").addButton((btn) => btn.setButtonText("Test").onClick(async () => {
+      const result = await this.plugin.todoistService.testSyncApiConnectivity();
+      new import_obsidian.Notice(result.message);
+      this.display();
+    }));
+    new import_obsidian.Setting(containerEl).setName("Use Sync API").setDesc("Recommended for local-first clients. Uses Todoist Sync API for incremental sync.").addToggle((toggle) => {
+      var _a;
+      return toggle.setValue((_a = this.plugin.settings.useSyncApi) != null ? _a : true).onChange(async (value) => {
+        this.plugin.settings.useSyncApi = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    containerEl.createEl("h3", { text: "Cache" });
+    new import_obsidian.Setting(containerEl).setName("Filter cache retention (days)").setDesc("Only affects cached filter results; does not delete Todoist tasks. Set to 0 to disable age-based pruning.").addText((text) => {
       var _a;
       return text.setPlaceholder("30").setValue(String((_a = this.plugin.settings.completedRetentionDays) != null ? _a : 30)).onChange(async (value) => {
         const parsed = Number.parseInt(value.trim() || "0", 10);
@@ -8779,7 +8806,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian.Setting(containerEl).setName("Max cached filters").setDesc("Maximum number of filter results to keep (LRU).").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("Max cached filters").setDesc("Maximum number of cached filter result sets to keep (LRU).").addText((text) => {
       var _a;
       return text.setPlaceholder("50").setValue(String((_a = this.plugin.settings.maxFilterCacheEntries) != null ? _a : 50)).onChange(async (value) => {
         const parsed = Number.parseInt(value.trim() || "0", 10);
@@ -8788,57 +8815,69 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian.Setting(containerEl).setName("Maintenance").setDesc("Queue and cache maintenance utilities.").addButton((btn) => btn.setButtonText("Prune cache").onClick(async () => {
+    new import_obsidian.Setting(containerEl).setName("Maintenance (advanced)").setDesc("Utilities for troubleshooting or reducing local data size. Most users do not need these.").addButton((btn) => btn.setButtonText("Prune filter cache").onClick(async () => {
       this.plugin.todoistService.pruneCache({
         completedRetentionDays: this.plugin.settings.completedRetentionDays,
         maxFilterCacheEntries: this.plugin.settings.maxFilterCacheEntries
       });
-      new import_obsidian.Notice("Obsidoist: cache pruned");
+      new import_obsidian.Notice("Obsidoist: filter cache pruned");
       this.display();
-    })).addButton((btn) => btn.setButtonText("Clear queue").onClick(async () => {
-      const ok = window.confirm("Clear all pending sync operations? This will not delete tasks on Todoist, but may lose unsynced local changes.");
+    })).addButton((btn) => btn.setButtonText("Prune local id mappings").onClick(async () => {
+      const ok = window.confirm(
+        "Prune local id mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults."
+      );
+      if (!ok)
+        return;
+      const aliasKeys = this.plugin.todoistService.getIdAliasMapKeys().filter((x) => x.startsWith("local-"));
+      if (aliasKeys.length === 0) {
+        new import_obsidian.Notice("Obsidoist: no local id mappings to prune");
+        return;
+      }
+      new import_obsidian.Notice("Obsidoist: scanning vault for local ids\u2026");
+      const aliasKeySet = new Set(aliasKeys);
+      const keep = /* @__PURE__ */ new Set();
+      for (const id of this.plugin.todoistService.getLocalIdsReferencedInState()) {
+        if (aliasKeySet.has(id))
+          keep.add(id);
+      }
+      const re = /\[todoist_id:(local-[\w-]+)\]/g;
+      const files = this.app.vault.getMarkdownFiles ? this.app.vault.getMarkdownFiles() : this.app.vault.getFiles();
+      for (const f of files) {
+        if (f.extension && f.extension !== "md")
+          continue;
+        let text = "";
+        try {
+          text = await this.app.vault.cachedRead ? this.app.vault.cachedRead(f) : this.app.vault.read(f);
+        } catch (e) {
+          continue;
+        }
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          const id = m[1];
+          if (aliasKeySet.has(id))
+            keep.add(id);
+        }
+      }
+      const keepSet = new Set(this.plugin.todoistService.getIdAliasMapKeys().filter((x) => keep.has(x)));
+      const removed = this.plugin.todoistService.pruneIdAliasMap(keepSet);
+      new import_obsidian.Notice(`Obsidoist: pruned ${removed} id mappings`);
+      this.display();
+    })).addButton((btn) => btn.setButtonText("Clear sync queue").onClick(async () => {
+      const ok = window.confirm("Clear all pending sync operations?\n\nThis will not delete tasks on Todoist, but may lose unsynced local changes.");
       if (!ok)
         return;
       this.plugin.todoistService.clearQueue();
-      new import_obsidian.Notice("Obsidoist: queue cleared");
+      new import_obsidian.Notice("Obsidoist: sync queue cleared");
       this.display();
     }));
-    new import_obsidian.Setting(containerEl).setName("Diagnostics").setDesc("Copy internal sync status for debugging.").addButton((btn) => btn.setButtonText("Copy").onClick(async () => {
-      const text = this.plugin.todoistService.exportDiagnostics();
-      await navigator.clipboard.writeText(text);
-      new import_obsidian.Notice("Obsidoist: diagnostics copied");
-    }));
-    new import_obsidian.Setting(containerEl).setName("Todoist Sync API test").setDesc("Test whether Todoist Sync API is reachable from your current Obsidian environment.").addButton((btn) => btn.setButtonText("Test").onClick(async () => {
-      const result = await this.plugin.todoistService.testSyncApiConnectivity();
-      new import_obsidian.Notice(result.message);
-      this.display();
-    }));
-    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default Project").setDesc("New tasks will be created in this project by default. Leave empty for Inbox.");
-    if (this.plugin.settings.todoistToken) {
-      this.plugin.todoistService.getProjects().then((projects) => {
-        projectSetting.addDropdown((dropdown) => {
-          dropdown.addOption("", "Inbox");
-          projects.forEach((project) => {
-            if (project.name !== "Inbox") {
-              dropdown.addOption(project.id, project.name);
-            }
-          });
-          dropdown.setValue(this.plugin.settings.defaultProjectId);
-          dropdown.onChange(async (value) => {
-            this.plugin.settings.defaultProjectId = value;
-            await this.plugin.saveSettings();
-          });
-        });
-      }).catch(() => {
-        projectSetting.setDesc("Failed to load projects. Check your API token.");
-        projectSetting.addText((text) => text.setPlaceholder("Project ID").setValue(this.plugin.settings.defaultProjectId).onChange(async (value) => {
-          this.plugin.settings.defaultProjectId = value;
-          await this.plugin.saveSettings();
-        }));
+    containerEl.createEl("h3", { text: "Developer" });
+    new import_obsidian.Setting(containerEl).setName("Debug logging").setDesc("Enable verbose logs in the developer console.").addToggle((toggle) => {
+      var _a;
+      return toggle.setValue((_a = this.plugin.settings.debugLogging) != null ? _a : false).onChange(async (value) => {
+        this.plugin.settings.debugLogging = value;
+        await this.plugin.saveSettings();
       });
-    } else {
-      projectSetting.setDesc("Enter API token to select project.");
-    }
+    });
   }
 };
 
@@ -9090,6 +9129,43 @@ var TodoistService = class extends import_obsidian2.Events {
     const projects = Object.keys(this.localState.projectsById).length;
     return { tasks, filters, projects };
   }
+  getIdAliasMapKeys() {
+    var _a;
+    return Object.keys((_a = this.localState.idAliasMap) != null ? _a : {});
+  }
+  getLocalIdsReferencedInState() {
+    var _a, _b, _c, _d;
+    const referenced = /* @__PURE__ */ new Set();
+    for (const id of Object.keys((_a = this.localState.tasksById) != null ? _a : {}))
+      referenced.add(id);
+    for (const op of (_b = this.localState.queue) != null ? _b : []) {
+      if (op.type === "create")
+        referenced.add(op.localId);
+      else
+        referenced.add(this.resolveId(op.id));
+    }
+    for (const ids of Object.values((_c = this.localState.filterResults) != null ? _c : {})) {
+      for (const id of ids)
+        referenced.add(this.resolveId(id));
+    }
+    for (const id of Object.keys((_d = this.localState.lineShadowById) != null ? _d : {}))
+      referenced.add(id);
+    return referenced;
+  }
+  pruneIdAliasMap(keepLocalIds) {
+    var _a, _b, _c;
+    const before = Object.keys((_a = this.localState.idAliasMap) != null ? _a : {}).length;
+    for (const localId of Object.keys((_b = this.localState.idAliasMap) != null ? _b : {})) {
+      if (keepLocalIds.has(localId))
+        continue;
+      delete this.localState.idAliasMap[localId];
+    }
+    const after = Object.keys((_c = this.localState.idAliasMap) != null ? _c : {}).length;
+    if (after !== before) {
+      this.requestPersist();
+    }
+    return before - after;
+  }
   clearQueue() {
     this.localState.queue = [];
     this.requestPersist();
@@ -9098,29 +9174,11 @@ var TodoistService = class extends import_obsidian2.Events {
   pruneCache(opts) {
     const now = this.now();
     const cutoff = now - Math.max(0, opts.completedRetentionDays) * 24 * 60 * 60 * 1e3;
-    const pinnedIds = /* @__PURE__ */ new Set();
-    for (const ids of Object.values(this.localState.filterResults)) {
-      for (const id of ids)
-        pinnedIds.add(this.resolveId(id));
-    }
-    for (const op of this.localState.queue) {
-      if (op.type === "create")
-        pinnedIds.add(op.localId);
-      else
-        pinnedIds.add(this.resolveId(op.id));
-    }
-    for (const [localId, remoteId] of Object.entries(this.localState.idAliasMap)) {
-      pinnedIds.add(localId);
-      pinnedIds.add(remoteId);
-    }
-    for (const [id, task] of Object.entries(this.localState.tasksById)) {
-      if (pinnedIds.has(id))
+    for (const [filter, lastUsedAt] of Object.entries(this.localState.filterLastUsedAt)) {
+      if (lastUsedAt >= cutoff)
         continue;
-      if (!task.isCompleted)
-        continue;
-      if (task.updatedAt >= cutoff)
-        continue;
-      delete this.localState.tasksById[id];
+      delete this.localState.filterResults[filter];
+      delete this.localState.filterLastUsedAt[filter];
     }
     const filterEntries = Object.entries(this.localState.filterLastUsedAt);
     filterEntries.sort((a, b) => b[1] - a[1]);
@@ -9196,7 +9254,7 @@ var TodoistService = class extends import_obsidian2.Events {
     const t = this.localState.tasksById[canonical];
     if (!t)
       return null;
-    return { id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId, dueDate: t.dueDate };
+    return { id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId, dueDate: t.dueDate, isDeleted: t.isDeleted };
   }
   getLastFullSyncAt() {
     return this.localState.lastFullSyncAt;
@@ -9361,6 +9419,7 @@ var TodoistService = class extends import_obsidian2.Events {
       projectId,
       dueDate,
       isRecurring: false,
+      isDeleted: false,
       source: "local",
       updatedAt: now
     };
@@ -9407,6 +9466,7 @@ var TodoistService = class extends import_obsidian2.Events {
         content,
         isCompleted: false,
         dueDate,
+        isDeleted: false,
         source: "local",
         updatedAt: now
       };
@@ -9543,14 +9603,21 @@ var TodoistService = class extends import_obsidian2.Events {
       const id = String(it.id);
       const hasPending = this.hasPendingOpsForId(id);
       if (it.is_deleted) {
-        if (!hasPending) {
-          const existing = this.localState.tasksById[id];
-          if (existing) {
-            existing.isCompleted = true;
-            existing.source = "remote";
-            existing.updatedAt = now;
-            existing.lastRemoteSeenAt = now;
-          }
+        const existing = this.localState.tasksById[id];
+        if (existing) {
+          existing.isDeleted = true;
+          existing.isCompleted = true;
+          existing.source = "remote";
+          existing.updatedAt = now;
+          existing.lastRemoteSeenAt = now;
+          const before = this.localState.queue.length;
+          this.localState.queue = this.localState.queue.filter((op) => {
+            if (op.type === "create")
+              return op.localId !== id;
+            return this.resolveId(op.id) !== id;
+          });
+          if (this.localState.queue.length !== before)
+            this.requestPersist();
         }
         continue;
       }
@@ -9567,6 +9634,7 @@ var TodoistService = class extends import_obsidian2.Events {
           projectId: it.project_id ? String(it.project_id) : void 0,
           dueDate,
           isRecurring,
+          isDeleted: false,
           source: "remote",
           updatedAt: now,
           lastRemoteSeenAt: now
@@ -9581,6 +9649,7 @@ var TodoistService = class extends import_obsidian2.Events {
       local.projectId = it.project_id ? String(it.project_id) : void 0;
       local.dueDate = dueDate;
       local.isRecurring = isRecurring;
+      local.isDeleted = false;
       local.source = "remote";
       local.updatedAt = now;
     }
@@ -9786,6 +9855,7 @@ var TodoistService = class extends import_obsidian2.Events {
           projectId: (_b = task.projectId) != null ? _b : task.project_id,
           dueDate: (_e = (_c = task.due) == null ? void 0 : _c.date) != null ? _e : ((_d = task.due) == null ? void 0 : _d.datetime) ? String(task.due.datetime).slice(0, 10) : void 0,
           isRecurring: Boolean((_h = (_f = task.due) == null ? void 0 : _f.isRecurring) != null ? _h : (_g = task.due) == null ? void 0 : _g.is_recurring),
+          isDeleted: false,
           source: "remote",
           updatedAt: now,
           lastRemoteSeenAt: now
@@ -9842,6 +9912,7 @@ var TodoistService = class extends import_obsidian2.Events {
           projectId: (_b = task.projectId) != null ? _b : task.project_id,
           dueDate: (_e = (_c = task.due) == null ? void 0 : _c.date) != null ? _e : ((_d = task.due) == null ? void 0 : _d.datetime) ? String(task.due.datetime).slice(0, 10) : void 0,
           isRecurring: Boolean((_h = (_f = task.due) == null ? void 0 : _f.isRecurring) != null ? _h : (_g = task.due) == null ? void 0 : _g.is_recurring),
+          isDeleted: false,
           source: "remote",
           updatedAt: now,
           lastRemoteSeenAt: now
@@ -9885,6 +9956,19 @@ var TodoistService = class extends import_obsidian2.Events {
 
 // syncManager.ts
 var import_obsidian3 = require("obsidian");
+
+// logger.ts
+var debugEnabled = false;
+function setDebugEnabled(enabled) {
+  debugEnabled = Boolean(enabled);
+}
+function debug(...args) {
+  if (!debugEnabled)
+    return;
+  console.log("[Obsidoist]", ...args);
+}
+
+// syncManager.ts
 var SyncManager = class {
   constructor(app, service, settings) {
     // Callback to set internal sync flag in main plugin
@@ -9914,7 +9998,7 @@ var SyncManager = class {
     return /\[todoist_id:([\w-]+)\]/;
   }
   get dueRegex() {
-    return /🗓\s*(\d{4}-\d{2}-\d{2})/;
+    return /(?:🗓️?|📅)\s*(\d{4}-\d{2}-\d{2})/;
   }
   setInternalSyncCallback(callback) {
     this.internalSyncCallback = callback;
@@ -9967,7 +10051,7 @@ var SyncManager = class {
     var _a, _b, _c;
     if (!file)
       return;
-    console.log(`[Obsidoist] Scanning file: ${file.path}`);
+    debug(`Scanning file: ${file.path}`);
     const content = await this.app.vault.read(file);
     const lines = content.split("\n");
     let modified = false;
@@ -10044,7 +10128,7 @@ var SyncManager = class {
           }
           const cleanContent = this.extractContent(line, true);
           const apiProjectId = projectId === "" ? void 0 : projectId;
-          console.log(`[Obsidoist] Creating task: ${cleanContent} in project ${apiProjectId || "Inbox"}`);
+          debug(`Creating task: ${cleanContent} in project ${apiProjectId || "Inbox"}`);
           const task = await this.service.createTask(cleanContent, apiProjectId, dueDate);
           if (task) {
             newLines[i] = `${lines[i]} [todoist_id:${task.id}]`;
@@ -10059,7 +10143,7 @@ var SyncManager = class {
       }
     }
     if (modified) {
-      console.log(`[Obsidoist] Modifying file with new IDs.`);
+      debug("Modifying file with new IDs.");
       this.setInternalSync(true);
       try {
         await this.app.vault.modify(file, newLines.join("\n"));
@@ -10070,7 +10154,7 @@ var SyncManager = class {
   }
   async syncDown(file) {
     var _a;
-    console.log(`[Obsidoist] Syncing down for ${file.path}`);
+    debug(`Syncing down for ${file.path}`);
     await this.ensureProjects();
     const content = await this.app.vault.read(file);
     const lines = content.split("\n");
@@ -10089,6 +10173,15 @@ var SyncManager = class {
           this.service.moveLineShadow(rawId, existingId);
         }
         if (cachedTask) {
+          if (cachedTask.isDeleted) {
+            const indentMatch = line.match(/^(\s*)/);
+            const indent = indentMatch ? indentMatch[1] : "";
+            let rest = line.slice(indent.length);
+            rest = rest.replace(this.idRegex, "").replace(this.settings.syncTag, "").replace(/\s+/g, " ").trim();
+            newLines[i] = indent + rest;
+            modified = true;
+            continue;
+          }
           const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
           if (statusMatch) {
             const currentStatus = statusMatch[2];
@@ -10099,11 +10192,11 @@ var SyncManager = class {
             const remoteDueDate = cachedTask.dueDate;
             let lineModified = false;
             if (currentStatus !== remoteStatus) {
-              console.log(`[Obsidoist] Task ${existingId} status changed: ${currentStatus} -> ${remoteStatus}`);
+              debug(`Task ${existingId} status changed: ${currentStatus} -> ${remoteStatus}`);
               lineModified = true;
             }
             if (localContent !== remoteContent) {
-              console.log(`[Obsidoist] Task ${existingId} content changed: ${localContent} -> ${remoteContent}`);
+              debug(`Task ${existingId} content changed: ${localContent} -> ${remoteContent}`);
               lineModified = true;
             }
             if ((localDueDate != null ? localDueDate : void 0) !== (remoteDueDate != null ? remoteDueDate : void 0)) {
@@ -10143,7 +10236,7 @@ var SyncManager = class {
           const lastFullSyncAt = this.service.getLastFullSyncAt();
           const isFresh = lastFullSyncAt && Date.now() - lastFullSyncAt < 3e5;
           if (isFresh && /^\d+$/.test(existingId)) {
-            console.log(`[Obsidoist] Task ${existingId} not found in cache after recent sync. Assuming completed.`);
+            debug(`Task ${existingId} not found in cache after recent sync. Assuming completed.`);
             const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
             if (statusMatch) {
               const currentStatus = statusMatch[2];
@@ -10164,7 +10257,7 @@ var SyncManager = class {
       }
     }
     if (modified) {
-      console.log(`[Obsidoist] Modifying file with updates.`);
+      debug("Modifying file with updates.");
       this.setInternalSync(true);
       try {
         await this.app.vault.modify(file, newLines.join("\n"));
@@ -10172,7 +10265,7 @@ var SyncManager = class {
         setTimeout(() => this.setInternalSync(false), 1500);
       }
     } else {
-      console.log(`[Obsidoist] No changes needed for file.`);
+      debug("No changes needed for file.");
     }
   }
   async syncDownIfHasLocalIds(file) {
@@ -10227,8 +10320,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     await this.refresh();
     this.startAutoRefreshIfNeeded();
     this.registerEvent(this.service.on("refresh", () => {
-      var _a;
-      console.log("[Obsidoist] View received refresh event. Re-rendering.");
+      debug("View received refresh event. Re-rendering.");
       if (this.suppressServiceRefresh)
         return;
       if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
@@ -10236,12 +10328,12 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       }
       this.refresh().finally(() => {
         setTimeout(() => {
-          var _a2;
-          return (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("obsidoist-spinning");
+          var _a;
+          return (_a = this.refreshBtn) == null ? void 0 : _a.removeClass("obsidoist-spinning");
         }, 500);
       });
       const { filter } = this.parseSourceConfig();
-      if (filter && ((_a = this.settings.codeblockAutoRefreshFilterFromRemote) != null ? _a : true)) {
+      if (filter) {
         void this.maybeRefreshFilterFromRemote("event");
       }
     }));
@@ -10281,10 +10373,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     if (!Number.isFinite(seconds) || seconds <= 0)
       return;
     this.autoRefreshIntervalId = window.setInterval(() => {
-      var _a;
       void this.refresh();
       const { filter } = this.parseSourceConfig();
-      if (filter && ((_a = this.settings.codeblockAutoRefreshFilterFromRemote) != null ? _a : true)) {
+      if (filter) {
         void this.maybeRefreshFilterFromRemote("interval");
       }
     }, seconds * 1e3);
@@ -10408,12 +10499,12 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
   // Ensure DOM is healthy before updates
   ensureDom() {
     if (!this.wrapper || !this.container.contains(this.wrapper)) {
-      console.log("[Obsidoist] DOM missing or detached, rebuilding...");
+      debug("DOM missing or detached, rebuilding...");
       this.buildDom();
     }
   }
   async refresh() {
-    var _a, _b;
+    var _a;
     this.ensureDom();
     try {
       const { filter, name, limit } = this.parseSourceConfig();
@@ -10421,7 +10512,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       if (titleEl) {
         titleEl.textContent = name;
       }
-      if (filter && ((_b = this.settings.codeblockAutoRefreshFilterFromRemote) != null ? _b : true)) {
+      if (filter) {
         await this.maybeRefreshFilterFromRemote("render");
       }
       const allTasks = await this.service.getTasks(filter);
@@ -10474,7 +10565,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
         li.addClass("is-checked");
       }
       checkbox.onchange = async () => {
-        var _a2, _b;
+        var _a2;
         const nextCompleted = checkbox.checked;
         if (nextCompleted) {
           li.addClass("is-checked");
@@ -10500,7 +10591,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
           return;
         }
         const { filter } = this.parseSourceConfig();
-        if (filter && ((_b = this.settings.codeblockAutoRefreshFilterFromRemote) != null ? _b : true)) {
+        if (filter) {
           void this.maybeRefreshFilterFromRemote("event");
         }
         void this.service.syncNow();
@@ -10531,89 +10622,6 @@ var CodeBlockProcessor = class {
   }
 };
 
-// dueDateSuggest.ts
-var import_obsidian5 = require("obsidian");
-function formatDateYYYYMMDD(d) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-function addDays(base, days) {
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-var DateInputModal = class extends import_obsidian5.Modal {
-  constructor(app, onSubmit) {
-    super(app);
-    this.onSubmit = onSubmit;
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.createEl("h3", { text: "Select due date" });
-    const input = contentEl.createEl("input", { type: "date" });
-    input.value = formatDateYYYYMMDD(new Date());
-    input.focus();
-    const row = contentEl.createDiv();
-    const submitBtn = row.createEl("button", { text: "Insert" });
-    const cancelBtn = row.createEl("button", { text: "Cancel" });
-    submitBtn.onclick = () => {
-      if (!input.value)
-        return;
-      this.onSubmit(input.value);
-      this.close();
-    };
-    cancelBtn.onclick = () => this.close();
-  }
-};
-var DueDateSuggestModal = class extends import_obsidian5.SuggestModal {
-  constructor(app, editor, insertAt) {
-    super(app);
-    this.editor = editor;
-    this.insertAt = insertAt;
-    const today = formatDateYYYYMMDD(new Date());
-    const tomorrow = formatDateYYYYMMDD(addDays(new Date(), 1));
-    const week = formatDateYYYYMMDD(addDays(new Date(), 7));
-    this.options = [
-      { id: "today", label: `Today (${today})`, date: today },
-      { id: "tomorrow", label: `Tomorrow (${tomorrow})`, date: tomorrow },
-      { id: "week", label: `In 7 days (${week})`, date: week },
-      { id: "custom", label: "Pick a date\u2026" }
-    ];
-    this.setPlaceholder("Select a due date");
-    this.inputEl.value = "";
-  }
-  getSuggestions(query) {
-    const q = query.trim().toLowerCase();
-    if (!q)
-      return this.options;
-    return this.options.filter((o) => o.label.toLowerCase().includes(q));
-  }
-  renderSuggestion(value, el) {
-    el.setText(value.label);
-  }
-  onChooseSuggestion(value) {
-    if (value.id === "custom") {
-      const modal = new DateInputModal(this.app, (date) => {
-        this.insertDate(date);
-      });
-      modal.open();
-      return;
-    }
-    this.insertDate(value.date);
-  }
-  insertDate(date) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      new import_obsidian5.Notice("Invalid date format. Expected YYYY-MM-DD.");
-      return;
-    }
-    this.editor.replaceRange(date, this.insertAt);
-    this.editor.setCursor({ line: this.insertAt.line, ch: this.insertAt.ch + date.length });
-  }
-};
-
 // main.ts
 function customDebounce(func, wait) {
   let timeout = null;
@@ -10627,19 +10635,18 @@ function customDebounce(func, wait) {
     }, wait);
   };
 }
-var ObsidoistPlugin = class extends import_obsidian6.Plugin {
+var ObsidoistPlugin = class extends import_obsidian5.Plugin {
   constructor() {
     super(...arguments);
     this.requestPersist = null;
     this.autoSyncIntervalId = null;
-    this.lastDueSuggestKey = null;
-    this.dueSuggestOpen = false;
     // Flag to ignore modify events triggered by internal sync
     this.isInternalSync = false;
   }
   async onload() {
-    var _a;
+    var _a, _b;
     await this.loadPluginData();
+    setDebugEnabled((_a = this.settings.debugLogging) != null ? _a : false);
     this.requestPersist = customDebounce(() => {
       void this.savePluginData();
     }, 1e3);
@@ -10647,7 +10654,7 @@ var ObsidoistPlugin = class extends import_obsidian6.Plugin {
       var _a2;
       return (_a2 = this.requestPersist) == null ? void 0 : _a2.call(this);
     });
-    this.todoistService.setUseSyncApi((_a = this.settings.useSyncApi) != null ? _a : true);
+    this.todoistService.setUseSyncApi((_b = this.settings.useSyncApi) != null ? _b : true);
     this.todoistService.updateCachePolicy({
       completedRetentionDays: this.settings.completedRetentionDays,
       maxFilterCacheEntries: this.settings.maxFilterCacheEntries
@@ -10665,9 +10672,9 @@ var ObsidoistPlugin = class extends import_obsidian6.Plugin {
       this.codeBlockProcessor.process(source, el, ctx);
     });
     const performSync = async (file) => {
-      console.log(`[Obsidoist] Debounced sync executing for ${file.path}. Internal sync flag: ${this.isInternalSync}`);
+      debug(`Debounced sync executing for ${file.path}. Internal sync flag: ${this.isInternalSync}`);
       if (this.isInternalSync) {
-        console.log("[Obsidoist] Skipping sync due to internal flag.");
+        debug("Skipping sync due to internal flag.");
         return;
       }
       await this.syncManager.scanAndSyncFile(file);
@@ -10677,20 +10684,19 @@ var ObsidoistPlugin = class extends import_obsidian6.Plugin {
     this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => {
       if (this.isInternalSync)
         return;
-      if (info.file instanceof import_obsidian6.TFile && info.file.extension === "md") {
+      if (info.file instanceof import_obsidian5.TFile && info.file.extension === "md") {
         debouncedSync(info.file);
-        this.maybeOpenDueDateSuggest(editor);
       }
     }));
     this.registerEvent(this.app.vault.on("modify", (file) => {
       if (this.isInternalSync)
         return;
-      if (file instanceof import_obsidian6.TFile && file.extension === "md") {
+      if (file instanceof import_obsidian5.TFile && file.extension === "md") {
         debouncedSync(file);
       }
     }));
     this.syncManager.setInternalSyncCallback((isSyncing) => {
-      console.log(`[Obsidoist] Setting internal sync flag to: ${isSyncing}`);
+      debug(`Setting internal sync flag to: ${isSyncing}`);
       this.isInternalSync = isSyncing;
     });
     this.addCommand({
@@ -10706,30 +10712,6 @@ var ObsidoistPlugin = class extends import_obsidian6.Plugin {
         }
       }
     });
-  }
-  maybeOpenDueDateSuggest(editor) {
-    var _a;
-    if (this.dueSuggestOpen)
-      return;
-    const cursor = editor.getCursor();
-    if (!cursor)
-      return;
-    if (cursor.ch <= 0)
-      return;
-    const lineText = (_a = editor.getLine(cursor.line)) != null ? _a : "";
-    const prefix = lineText.slice(0, cursor.ch);
-    if (!prefix.endsWith("\u{1F5D3}"))
-      return;
-    const key = `${cursor.line}:${cursor.ch}`;
-    if (this.lastDueSuggestKey === key)
-      return;
-    this.lastDueSuggestKey = key;
-    this.dueSuggestOpen = true;
-    const modal = new DueDateSuggestModal(this.app, editor, { line: cursor.line, ch: cursor.ch });
-    modal.onClose = () => {
-      this.dueSuggestOpen = false;
-    };
-    modal.open();
   }
   async onunload() {
     if (this.autoSyncIntervalId !== null) {
@@ -10774,11 +10756,12 @@ var ObsidoistPlugin = class extends import_obsidian6.Plugin {
     });
   }
   async saveSettings() {
-    var _a;
+    var _a, _b;
     await this.savePluginData();
+    setDebugEnabled((_a = this.settings.debugLogging) != null ? _a : false);
     if (this.todoistService) {
       this.todoistService.updateToken(this.settings.todoistToken);
-      this.todoistService.setUseSyncApi((_a = this.settings.useSyncApi) != null ? _a : true);
+      this.todoistService.setUseSyncApi((_b = this.settings.useSyncApi) != null ? _b : true);
       this.todoistService.updateCachePolicy({
         completedRetentionDays: this.settings.completedRetentionDays,
         maxFilterCacheEntries: this.settings.maxFilterCacheEntries

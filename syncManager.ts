@@ -2,6 +2,7 @@ import { App, TFile, Notice } from 'obsidian';
 import { TodoistService } from './todoistService';
 import { ObsidoistSettings } from './settings';
 import { Project } from '@doist/todoist-api-typescript';
+import { debug } from './logger';
 
 export class SyncManager {
     app: App;
@@ -34,9 +35,9 @@ export class SyncManager {
         return /\[todoist_id:([\w-]+)\]/;
     }
 
-    private get dueRegex() {
-        return /🗓\s*(\d{4}-\d{2}-\d{2})/;
-    }
+	private get dueRegex() {
+		return /(?:🗓️?|📅)\s*(\d{4}-\d{2}-\d{2})/;
+	}
 
     constructor(app: App, service: TodoistService, settings: ObsidoistSettings) {
         this.app = app;
@@ -113,7 +114,7 @@ export class SyncManager {
 
 	async scanAndSyncFile(file: TFile, opts?: { primedCache?: boolean }) {
 		if (!file) return;
-		console.log(`[Obsidoist] Scanning file: ${file.path}`);
+		debug(`Scanning file: ${file.path}`);
 		const content = await this.app.vault.read(file);
 		const lines = content.split('\n');
 		let modified = false;
@@ -214,7 +215,7 @@ export class SyncManager {
 
                     const apiProjectId = projectId === '' ? undefined : projectId;
 
-                    console.log(`[Obsidoist] Creating task: ${cleanContent} in project ${apiProjectId || 'Inbox'}`);
+					debug(`Creating task: ${cleanContent} in project ${apiProjectId || 'Inbox'}`);
 					const task = await this.service.createTask(cleanContent, apiProjectId, dueDate);
 					if (task) {
 						newLines[i] = `${lines[i]} [todoist_id:${task.id}]`;
@@ -232,7 +233,7 @@ export class SyncManager {
         }
 
         if (modified) {
-            console.log(`[Obsidoist] Modifying file with new IDs.`);
+			debug('Modifying file with new IDs.');
             this.setInternalSync(true);
             try {
                 await this.app.vault.modify(file, newLines.join('\n'));
@@ -243,7 +244,7 @@ export class SyncManager {
     }
 
     async syncDown(file: TFile) {
-        console.log(`[Obsidoist] Syncing down for ${file.path}`);
+		debug(`Syncing down for ${file.path}`);
         await this.ensureProjects();
         const content = await this.app.vault.read(file);
         const lines = content.split('\n');
@@ -269,6 +270,15 @@ export class SyncManager {
                 }
 
                     if (cachedTask) {
+						if (cachedTask.isDeleted) {
+							const indentMatch = line.match(/^(\s*)/);
+							const indent = indentMatch ? indentMatch[1] : '';
+							let rest = line.slice(indent.length);
+							rest = rest.replace(this.idRegex, '').replace(this.settings.syncTag, '').replace(/\s+/g, ' ').trim();
+							newLines[i] = indent + rest;
+							modified = true;
+							continue;
+						}
                         const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
                         if (statusMatch) {
                             const currentStatus = statusMatch[2];
@@ -284,13 +294,13 @@ export class SyncManager {
                         
                         // Check status
                         if (currentStatus !== remoteStatus) {
-                            console.log(`[Obsidoist] Task ${existingId} status changed: ${currentStatus} -> ${remoteStatus}`);
+							debug(`Task ${existingId} status changed: ${currentStatus} -> ${remoteStatus}`);
                             lineModified = true;
                         }
                         
 							// Check content
 							if (localContent !== remoteContent) {
-								console.log(`[Obsidoist] Task ${existingId} content changed: ${localContent} -> ${remoteContent}`);
+							debug(`Task ${existingId} content changed: ${localContent} -> ${remoteContent}`);
 								lineModified = true;
 							}
 
@@ -339,7 +349,7 @@ export class SyncManager {
                     const isFresh = lastFullSyncAt && (Date.now() - lastFullSyncAt) < 300000;
 
 					if (isFresh && /^\d+$/.test(existingId)) {
-						console.log(`[Obsidoist] Task ${existingId} not found in cache after recent sync. Assuming completed.`);
+					debug(`Task ${existingId} not found in cache after recent sync. Assuming completed.`);
 						const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
 						if (statusMatch) {
 							const currentStatus = statusMatch[2];
@@ -362,7 +372,7 @@ export class SyncManager {
         }
         
         if (modified) {
-            console.log(`[Obsidoist] Modifying file with updates.`);
+			debug('Modifying file with updates.');
             this.setInternalSync(true);
             try {
                 await this.app.vault.modify(file, newLines.join('\n'));
@@ -370,7 +380,7 @@ export class SyncManager {
                 setTimeout(() => this.setInternalSync(false), 1500);
             }
         } else {
-            console.log(`[Obsidoist] No changes needed for file.`);
+			debug('No changes needed for file.');
         }
     }
 

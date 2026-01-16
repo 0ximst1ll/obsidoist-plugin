@@ -58,6 +58,7 @@ export interface LocalTaskRecord {
     projectId?: string;
     dueDate?: string;
 	isRecurring?: boolean;
+	isDeleted?: boolean;
     source: 'remote' | 'local';
     updatedAt: number;
     lastRemoteSeenAt?: number;

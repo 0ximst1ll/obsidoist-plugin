@@ -4,7 +4,8 @@ import { TodoistService } from './todoistService';
 import { SyncManager } from './syncManager';
 import { CodeBlockProcessor } from './codeBlock';
 import { createDefaultLocalState, migrateLocalState, ObsidoistLocalState } from './localState';
-import { DueDateSuggestModal } from './dueDateSuggest';
+import { setDebugEnabled } from './logger';
+import { debug } from './logger';
 
 // Custom debounce implementation to ensure consistent behavior
 function customDebounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -32,14 +33,13 @@ export default class ObsidoistPlugin extends Plugin {
 
 	private autoSyncIntervalId: number | null = null;
 
-	private lastDueSuggestKey: string | null = null;
-	private dueSuggestOpen = false;
 
     // Flag to ignore modify events triggered by internal sync
     private isInternalSync = false;
 
 	async onload() {
 		await this.loadPluginData();
+		setDebugEnabled(this.settings.debugLogging ?? false);
 
         this.requestPersist = customDebounce(() => {
             void this.savePluginData();
@@ -76,10 +76,10 @@ export default class ObsidoistPlugin extends Plugin {
 
         // Shared sync function
         const performSync = async (file: TFile) => {
-             console.log(`[Obsidoist] Debounced sync executing for ${file.path}. Internal sync flag: ${this.isInternalSync}`);
+             debug(`Debounced sync executing for ${file.path}. Internal sync flag: ${this.isInternalSync}`);
              // Skip if we are currently internally syncing
              if (this.isInternalSync) {
-                 console.log("[Obsidoist] Skipping sync due to internal flag.");
+                 debug('Skipping sync due to internal flag.');
                  return;
              }
 
@@ -105,10 +105,9 @@ export default class ObsidoistPlugin extends Plugin {
             // Check if it's a TFile
             if (info.file instanceof TFile && info.file.extension === 'md') {
                 // console.log(`[Obsidoist] Editor change detected: ${info.file.path}`);
-                debouncedSync(info.file);
-				this.maybeOpenDueDateSuggest(editor);
-            }
-        }));
+				debouncedSync(info.file);
+			}
+		}));
 
         // 2. Listen to Vault Modifications (External changes or Autosave)
         // This catches changes not made via active editor (e.g. other plugins)
@@ -123,7 +122,7 @@ export default class ObsidoistPlugin extends Plugin {
         
         // Wrap SyncManager modification methods to manage isInternalSync flag
         this.syncManager.setInternalSyncCallback((isSyncing) => {
-            console.log(`[Obsidoist] Setting internal sync flag to: ${isSyncing}`);
+            debug(`Setting internal sync flag to: ${isSyncing}`);
             this.isInternalSync = isSyncing;
         });
 
@@ -145,28 +144,6 @@ export default class ObsidoistPlugin extends Plugin {
             }
         });
 
-	}
-
-	private maybeOpenDueDateSuggest(editor: Editor) {
-		if (this.dueSuggestOpen) return;
-		const cursor = editor.getCursor();
-		if (!cursor) return;
-		if (cursor.ch <= 0) return;
-
-		const lineText = editor.getLine(cursor.line) ?? '';
-		const prefix = lineText.slice(0, cursor.ch);
-		if (!prefix.endsWith('🗓')) return;
-
-		const key = `${cursor.line}:${cursor.ch}`;
-		if (this.lastDueSuggestKey === key) return;
-		this.lastDueSuggestKey = key;
-
-		this.dueSuggestOpen = true;
-		const modal = new DueDateSuggestModal(this.app, editor, { line: cursor.line, ch: cursor.ch });
-		modal.onClose = () => {
-			this.dueSuggestOpen = false;
-		};
-		modal.open();
 	}
 
 	async onunload() {
@@ -218,6 +195,7 @@ export default class ObsidoistPlugin extends Plugin {
 
 	async saveSettings() {
         await this.savePluginData();
+		setDebugEnabled(this.settings.debugLogging ?? false);
         if (this.todoistService) {
             this.todoistService.updateToken(this.settings.todoistToken);
 			this.todoistService.setUseSyncApi(this.settings.useSyncApi ?? true);
