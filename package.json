@@ -1,5 +1,5 @@
 {
-  "name": "obsidoist-plugin",
+  "name": "obsidoist",
   "version": "1.0.0",
   "description": "Obsidian plugin for task management with Todoist sync",
   "main": "main.js",
