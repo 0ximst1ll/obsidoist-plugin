@@ -1,5 +1,37 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, Modal, TFile } from 'obsidian';
 import type ObsidoistPlugin from './main';
+
+function confirmWithModal(app: App, title: string, message: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const modal = new (class extends Modal {
+			onResult: (value: boolean) => void;
+			constructor(app: App, onResult: (value: boolean) => void) {
+				super(app);
+				this.onResult = onResult;
+			}
+			onOpen() {
+				this.titleEl.setText(title);
+				this.contentEl.createEl('p', { text: message });
+
+				const buttons = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				const cancel = buttons.createEl('button', { text: 'Cancel' });
+				cancel.addEventListener('click', () => {
+					this.close();
+					this.onResult(false);
+				});
+
+				const ok = buttons.createEl('button', { text: 'Confirm' });
+				ok.addClass('mod-cta');
+				ok.addEventListener('click', () => {
+					this.close();
+					this.onResult(true);
+				});
+			}
+		})(app, resolve);
+
+		modal.open();
+	});
+}
 
 export interface ObsidoistSettings {
 	todoistToken: string;
@@ -38,13 +70,12 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Obsidoist Settings' });
-
-		containerEl.createEl('h3', { text: 'Basic' });
+		new Setting(containerEl).setName('Obsidoist settings').setHeading();
+		new Setting(containerEl).setName('Basic').setHeading();
 
 		new Setting(containerEl)
-			.setName('Todoist API Token')
-			.setDesc('Your Todoist API token. You can find it in Todoist Settings > Integrations.')
+			.setName('Todoist API token')
+			.setDesc('Your Todoist API token. You can find it in Todoist settings > Integrations.')
 			.addText(text => text
 				.setPlaceholder('Enter your token')
 				.setValue(this.plugin.settings.todoistToken)
@@ -55,7 +86,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 				}));
 
 		const projectSetting = new Setting(containerEl)
-			.setName('Default Project')
+			.setName('Default project')
 			.setDesc('New tasks will be created in this project by default. Leave empty for Inbox.');
 
 		if (this.plugin.settings.todoistToken) {
@@ -86,7 +117,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 		}
 
 		new Setting(containerEl)
-			.setName('Sync Tag')
+			.setName('Sync tag')
 			.setDesc('The tag used to identify tasks that should be synced with Todoist.')
 			.addText(text => text
 				.setPlaceholder('#todoist')
@@ -96,11 +127,11 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		containerEl.createEl('h3', { text: 'Sync' });
+		new Setting(containerEl).setName('Sync').setHeading();
 
 		new Setting(containerEl)
-			.setName('Codeblock auto refresh (seconds)')
-			.setDesc('How often obsidoist code blocks refresh themselves. Set 0 to disable.')
+			.setName('Code block auto refresh (seconds)')
+			.setDesc('How often Obsidoist code blocks refresh themselves. Set 0 to disable.')
 			.addText(text => text
 				.setPlaceholder('60')
 				.setValue(String(this.plugin.settings.codeblockAutoRefreshSeconds ?? 60))
@@ -131,12 +162,9 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 				.setButtonText('Sync')
 				.onClick(async () => {
 					try {
-						await this.plugin.todoistService.syncNow();
 						const file = this.plugin.app.workspace.getActiveFile();
-						if (file) {
-							await this.plugin.syncManager.syncDown(file);
-						}
-						this.plugin.todoistService.triggerRefresh();
+						if (file) await this.plugin.syncManager.syncAfterQueue(file);
+						else await this.plugin.todoistService.syncNow();
 						new Notice('Obsidoist: sync completed');
 						this.display();
 					} catch (e) {
@@ -175,7 +203,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		containerEl.createEl('h3', { text: 'Cache' });
+		new Setting(containerEl).setName('Cache').setHeading();
 
 		new Setting(containerEl)
 			.setName('Filter cache retention (days)')
@@ -208,7 +236,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 			.setDesc('Utilities for troubleshooting or reducing local data size. Most users do not need these.')
 			.addButton(btn => btn
 				.setButtonText('Prune filter cache')
-				.onClick(async () => {
+				.onClick(() => {
 					this.plugin.todoistService.pruneCache({
 						completedRetentionDays: this.plugin.settings.completedRetentionDays,
 						maxFilterCacheEntries: this.plugin.settings.maxFilterCacheEntries
@@ -219,7 +247,9 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 			.addButton(btn => btn
 				.setButtonText('Prune local id mappings')
 				.onClick(async () => {
-					const ok = window.confirm(
+					const ok = await confirmWithModal(
+						this.app,
+						'Prune local id mappings',
 						'Prune local id mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults.'
 					);
 					if (!ok) return;
@@ -239,12 +269,15 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 					}
 
 					const re = /\[todoist_id:(local-[\w-]+)\]/g;
-					const files = (this.app.vault as any).getMarkdownFiles ? (this.app.vault as any).getMarkdownFiles() : this.app.vault.getFiles();
+					const vaultGet = this.app.vault as unknown as { getMarkdownFiles?: () => TFile[] };
+					const files = typeof vaultGet.getMarkdownFiles === 'function'
+						? vaultGet.getMarkdownFiles()
+						: this.app.vault.getFiles().filter((f): f is TFile => f instanceof TFile && f.extension === 'md');
 					for (const f of files) {
-						if ((f as any).extension && (f as any).extension !== 'md') continue;
 						let text = '';
 						try {
-							text = await (this.app.vault as any).cachedRead ? (this.app.vault as any).cachedRead(f) : this.app.vault.read(f);
+							const vaultRead = this.app.vault as unknown as { cachedRead?: (file: TFile) => Promise<string> };
+							text = typeof vaultRead.cachedRead === 'function' ? await vaultRead.cachedRead(f) : await this.app.vault.read(f);
 						} catch {
 							continue;
 						}
@@ -263,14 +296,18 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 			.addButton(btn => btn
 				.setButtonText('Clear sync queue')
 				.onClick(async () => {
-					const ok = window.confirm('Clear all pending sync operations?\n\nThis will not delete tasks on Todoist, but may lose unsynced local changes.');
+					const ok = await confirmWithModal(
+						this.app,
+						'Clear sync queue',
+						'Clear all pending sync operations?\n\nThis will not delete tasks on Todoist, but may lose unsynced local changes.'
+					);
 					if (!ok) return;
 					this.plugin.todoistService.clearQueue();
 					new Notice('Obsidoist: sync queue cleared');
 					this.display();
 				}));
 
-		containerEl.createEl('h3', { text: 'Developer' });
+		new Setting(containerEl).setName('Developer').setHeading();
 
 		new Setting(containerEl)
 			.setName('Debug logging')

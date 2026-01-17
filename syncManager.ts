@@ -8,9 +8,10 @@ export class SyncManager {
     app: App;
     service: TodoistService;
     settings: ObsidoistSettings;
-    
-    // Callback to set internal sync flag in main plugin
-    private internalSyncCallback: ((isSyncing: boolean) => void) | null = null;
+
+	private syncChain: Promise<void> = Promise.resolve();
+
+	private lastInternalModifyAtByPath = new Map<string, number>();
     
     private sigEquals(a: { content: string; isCompleted: boolean; projectId?: string; dueDate?: string } | undefined, b: { content: string; isCompleted: boolean; projectId?: string; dueDate?: string } | undefined): boolean {
         if (!a || !b) return false;
@@ -44,16 +45,55 @@ export class SyncManager {
         this.service = service;
         this.settings = settings;
     }
+
+	private enqueueSync(fn: () => Promise<void>): Promise<void> {
+		const run = async () => {
+			try {
+				await fn();
+			} catch (e) {
+				console.error('[Obsidoist] Sync failed', e);
+			}
+		};
+		const next = this.syncChain.then(run, run);
+		this.syncChain = next;
+		return next;
+	}
+
+	syncFile(file: TFile): Promise<void> {
+		return this.enqueueSync(async () => {
+			debug('syncFile:start', { path: file.path });
+			await this.scanAndSyncFile(file);
+			await this.service.syncNow();
+			await this.syncDown(file);
+			this.service.triggerRefresh();
+			debug('syncFile:done', { path: file.path });
+		});
+	}
+
+	syncAfterQueue(file: TFile): Promise<void> {
+		return this.enqueueSync(async () => {
+			debug('syncAfterQueue:start', { path: file.path });
+			await this.service.syncNow();
+			await this.syncDown(file);
+			this.service.triggerRefresh();
+			debug('syncAfterQueue:done', { path: file.path });
+		});
+	}
+
+	syncDownSafe(file: TFile): Promise<void> {
+		return this.enqueueSync(async () => {
+			debug('syncDownSafe:start', { path: file.path });
+			await this.syncDown(file);
+			this.service.triggerRefresh();
+			debug('syncDownSafe:done', { path: file.path });
+		});
+	}
     
-    setInternalSyncCallback(callback: (isSyncing: boolean) => void) {
-        this.internalSyncCallback = callback;
-    }
-    
-    private setInternalSync(isSyncing: boolean) {
-        if (this.internalSyncCallback) {
-            this.internalSyncCallback(isSyncing);
-        }
-    }
+	isLikelyInternalModify(file: TFile): boolean {
+		const at = this.lastInternalModifyAtByPath.get(file.path);
+		if (!at) return false;
+		return (Date.now() - at) < 2000;
+	}
 
     private async ensureProjects() {
         // Refresh projects every 5 minutes or if empty
@@ -171,21 +211,28 @@ export class SyncManager {
 						prevSig = { content: cached.content, dueDate: cached.dueDate, projectId: cached.projectId, isCompleted: cached.isCompleted };
 					}
 					if (!prevSig) {
+						debug('scan:missingPrevSig', { id: existingId, hasCached: Boolean(cached), isCompleted: currentSig.isCompleted });
 						this.service.setLineShadow(existingId, currentSig);
 						continue;
 					}
-					if (this.sigEquals(prevSig, currentSig)) continue;
+					if (this.sigEquals(prevSig, currentSig)) {
+						debug('scan:noChange', { id: existingId, isCompleted: currentSig.isCompleted });
+						continue;
+					}
 
 					if (prevSig.content !== currentSig.content || (prevSig.dueDate ?? undefined) !== (currentSig.dueDate ?? undefined)) {
+						debug('scan:enqueue:update', { id: existingId });
 						const success = await this.service.updateTask(existingId, taskContent, dueDate);
 						if (success) new Notice(`Updated Todoist task: ${taskContent.substring(0, 20)}...`);
 					}
 
 					if (currentSig.projectId && (prevSig.projectId ?? undefined) !== currentSig.projectId) {
+						debug('scan:enqueue:move', { id: existingId, projectId: currentSig.projectId });
 						await this.service.moveTask(existingId, currentSig.projectId);
 					}
 
 					if (prevSig.isCompleted !== currentSig.isCompleted) {
+						debug('scan:enqueue:toggle', { id: existingId, from: prevSig.isCompleted, to: currentSig.isCompleted });
 						if (currentSig.isCompleted) await this.service.closeTask(existingId);
 						else await this.service.reopenTask(existingId);
 					}
@@ -234,12 +281,8 @@ export class SyncManager {
 
         if (modified) {
 			debug('Modifying file with new IDs.');
-            this.setInternalSync(true);
-            try {
-                await this.app.vault.modify(file, newLines.join('\n'));
-            } finally {
-                setTimeout(() => this.setInternalSync(false), 1500);
-            }
+			this.lastInternalModifyAtByPath.set(file.path, Date.now());
+            await this.app.vault.modify(file, newLines.join('\n'));
         }
     }
 
@@ -270,6 +313,10 @@ export class SyncManager {
                 }
 
                     if (cachedTask) {
+						if (this.service.hasPendingOpsForId(existingId)) {
+							debug(`syncDown skip due to pending ops for ${existingId}`);
+							continue;
+						}
 						if (cachedTask.isDeleted) {
 							const indentMatch = line.match(/^(\s*)/);
 							const indent = indentMatch ? indentMatch[1] : '';
@@ -289,6 +336,40 @@ export class SyncManager {
                             const remoteContent = cachedTask.content;
 						const localDueDate = this.extractDueDate(line);
 						const remoteDueDate = cachedTask.dueDate;
+
+						const remoteSig = {
+							content: remoteContent,
+							isCompleted: cachedTask.isCompleted,
+							projectId: cachedTask.projectId,
+							dueDate: remoteDueDate
+						};
+
+						let localProjectId: string | undefined = undefined;
+						for (const project of this.projects) {
+							const normalizedProjectName = project.name.replace(/\s+/g, '');
+							const tag = `#${normalizedProjectName}`;
+							if (new RegExp(tag, 'i').test(line)) {
+								localProjectId = project.id;
+								break;
+							}
+						}
+
+						const localSig = {
+							content: localContent,
+							isCompleted: currentStatus !== ' ',
+							projectId: localProjectId,
+							dueDate: localDueDate
+						};
+
+						const shadowSig = this.service.getLineShadow(existingId);
+						if (shadowSig && !this.sigEquals(shadowSig, localSig)) {
+							debug(`syncDown skip due to unprocessed local edits for ${existingId}`);
+							continue;
+						}
+						if (shadowSig && this.sigEquals(shadowSig, localSig) && !this.sigEquals(shadowSig, remoteSig)) {
+							debug(`syncDown skip due to shadowSig divergence for ${existingId}`);
+							continue;
+						}
                             
                             let lineModified = false;
                         
@@ -310,15 +391,6 @@ export class SyncManager {
 						}
 
 						// Check project
-						let localProjectId: string | undefined = undefined;
-						for (const project of this.projects) {
-							const normalizedProjectName = project.name.replace(/\s+/g, '');
-							const tag = `#${normalizedProjectName}`;
-							if (new RegExp(tag, 'i').test(line)) {
-								localProjectId = project.id;
-								break;
-							}
-						}
 						if ((localProjectId ?? undefined) !== (cachedTask.projectId ?? undefined)) {
 							lineModified = true;
 						}
@@ -342,51 +414,56 @@ export class SyncManager {
 							newLines[i] = newLines[i].replace(/\s+/g, ' ');
                                 
                                 modified = true;
+								this.service.setLineShadow(existingId, {
+									content: remoteContent,
+									isCompleted: cachedTask.isCompleted,
+									projectId: cachedTask.projectId,
+									dueDate: remoteDueDate
+								});
                             }
                         }
-                    } else {
-                    const lastFullSyncAt = this.service.getLastFullSyncAt();
-                    const isFresh = lastFullSyncAt && (Date.now() - lastFullSyncAt) < 300000;
-
-					if (isFresh && /^\d+$/.test(existingId)) {
-					debug(`Task ${existingId} not found in cache after recent sync. Assuming completed.`);
-						const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
-						if (statusMatch) {
-							const currentStatus = statusMatch[2];
-							if (currentStatus !== 'x') {
-								newLines[i] = line.replace(/^(\s*-\s\[)(.)(\])/, '$1x$3');
-								modified = true;
-							}
-
-							const basisLine = modified ? newLines[i] : line;
-							this.service.setLineShadow(existingId, {
-								content: this.extractContent(basisLine, true),
-								dueDate: this.extractDueDate(basisLine),
-								projectId: this.findProjectByTag(this.extractContent(basisLine, false)),
-								isCompleted: true
-							});
-						}
-					}
-				}
+                    }
             }
         }
         
         if (modified) {
 			debug('Modifying file with updates.');
-            this.setInternalSync(true);
-            try {
-                await this.app.vault.modify(file, newLines.join('\n'));
-            } finally {
-                setTimeout(() => this.setInternalSync(false), 1500);
-            }
+			this.lastInternalModifyAtByPath.set(file.path, Date.now());
+            await this.app.vault.modify(file, newLines.join('\n'));
         } else {
 			debug('No changes needed for file.');
         }
     }
 
+	async primeFileShadows(file: TFile): Promise<void> {
+		if (!file) return;
+		await this.enqueueSync(async () => {
+			debug('primeFileShadows:start', { path: file.path });
+			await this.ensureProjects();
+			const content = await this.app.vault.read(file);
+			const lines = content.split('\n');
+			for (const line of lines) {
+				const idMatch = line.match(this.idRegex);
+				if (!idMatch) continue;
+				const rawId = idMatch[1];
+				const existingId = this.service.resolveTaskId(rawId);
+				if (this.service.getLineShadow(existingId)) continue;
+				const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
+				if (!statusMatch) continue;
+				const isCompleted = statusMatch[2] !== ' ';
+				const taskContent = this.extractContent(line, true);
+				const dueDate = this.extractDueDate(line);
+				const rawContentWithTags = this.extractContent(line, false);
+				const tagProjectId = this.findProjectByTag(rawContentWithTags);
+				this.service.setLineShadow(existingId, { content: taskContent, dueDate, projectId: tagProjectId, isCompleted });
+			}
+			debug('primeFileShadows:done', { path: file.path });
+		});
+	}
+
     async syncDownIfHasLocalIds(file: TFile) {
         const content = await this.app.vault.read(file);
         if (!/\[todoist_id:local-[\w-]+\]/.test(content)) return;
-        await this.syncDown(file);
+        await this.syncDownSafe(file);
     }
 }

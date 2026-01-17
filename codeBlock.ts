@@ -1,4 +1,4 @@
-import { MarkdownPostProcessorContext, MarkdownRenderChild, App, Notice, setIcon, MarkdownView } from "obsidian";
+import { MarkdownPostProcessorContext, MarkdownRenderChild, App, Notice, setIcon, MarkdownView, TFile } from "obsidian";
 import { debug } from './logger';
 import { TodoistService } from "./todoistService";
 import { SyncManager } from "./syncManager";
@@ -13,6 +13,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
     container: HTMLElement;
     ctx: MarkdownPostProcessorContext;
 	settings: ObsidoistSettings;
+	private sourceFile: TFile | null = null;
     
     // DOM Elements
     private wrapper: HTMLElement | null = null;
@@ -42,7 +43,9 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         this.ctx = ctx;
     }
 
-    async onload() {
+    onload(): void {
+		const abstract = this.app.vault.getAbstractFileByPath(this.ctx.sourcePath);
+		this.sourceFile = abstract instanceof TFile ? abstract : null;
         this.codeBlockWrapper = this.findCodeBlockWrapperAndTag();
 
         if (this.codeBlockWrapper) {
@@ -59,7 +62,9 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         }
 
         this.buildDom();
-        await this.refresh();
+        void this.refresh().catch((e) => {
+            console.error('[Obsidoist] Initial refresh failed', e);
+        });
 
 		this.startAutoRefreshIfNeeded();
         
@@ -73,9 +78,13 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                  this.refreshBtn.addClass("obsidoist-spinning");
             }
             
-            this.refresh().finally(() => {
-                 setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
-            });
+            void this.refresh()
+                .catch((e) => {
+                    console.error('[Obsidoist] Refresh failed', e);
+                })
+                .finally(() => {
+                    setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+                });
 
 			const { filter } = this.parseSourceConfig();
 			if (filter) {
@@ -149,8 +158,6 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 
 			this.suppressServiceRefresh = true;
 			await this.service.syncFilterNow(filter);
-			const activeFile = this.app.workspace.getActiveFile();
-			if (activeFile) await this.syncManager.syncDown(activeFile);
 			if (source !== 'render') {
 				await this.refresh();
 			}
@@ -188,14 +195,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         const nativeButtons = Array.from(wrapper.querySelectorAll('.edit-block-button'));
         for (const nativeBtn of nativeButtons) {
             if (!(nativeBtn instanceof HTMLElement)) continue;
-            nativeBtn.style.setProperty('display', 'none', 'important');
-            nativeBtn.style.setProperty('visibility', 'hidden', 'important');
-            nativeBtn.style.setProperty('opacity', '0', 'important');
-            nativeBtn.style.setProperty('pointer-events', 'none', 'important');
-            nativeBtn.style.setProperty('width', '0', 'important');
-            nativeBtn.style.setProperty('height', '0', 'important');
-            nativeBtn.style.setProperty('padding', '0', 'important');
-            nativeBtn.style.setProperty('margin', '0', 'important');
+            nativeBtn.classList.add('obsidoist-native-edit-hidden');
         }
     }
     
@@ -207,9 +207,9 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         // 1. Header (Clean Flexbox Layout)
         this.header = this.wrapper.createDiv({ cls: "obsidoist-header" });
         
-        // Title (Optional, placeholder for future features)
         const title = this.header.createDiv({ cls: "obsidoist-title" });
-        // We can parse 'name: My Tasks' from source later if needed
+        const { name } = this.parseSourceConfig();
+        if (name) title.setText(name);
         
         // Controls Container (Right aligned)
         const controls = this.header.createDiv({ cls: "obsidoist-controls" });
@@ -226,12 +226,14 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
             
             this.refreshBtn?.addClass("obsidoist-spinning");
 			try {
+				this.suppressServiceRefresh = true;
 				const { filter } = this.parseSourceConfig();
+				const file = this.sourceFile ?? this.app.workspace.getActiveFile();
+				if (file) await this.syncManager.syncFile(file);
 				await this.service.syncFilterNow(filter);
-				const activeFile = this.app.workspace.getActiveFile();
-				if (activeFile) await this.syncManager.syncDown(activeFile);
 				await this.refresh();
 			} finally {
+				this.suppressServiceRefresh = false;
 				setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
 			}
 		};
@@ -351,6 +353,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
             
             checkbox.onchange = async () => {
                 const nextCompleted = checkbox.checked;
+				debug('Codeblock checkbox change', { id: task.id, nextCompleted });
 
                 if (nextCompleted) {
                     li.addClass("is-checked");
@@ -363,6 +366,8 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                 }
 
                 try {
+					this.suppressServiceRefresh = true;
+					debug('Codeblock enqueue op', { id: task.id, op: nextCompleted ? 'close' : 'reopen' });
                     if (nextCompleted) await this.service.closeTask(task.id);
                     else await this.service.reopenTask(task.id);
                 } catch (err) {
@@ -372,25 +377,30 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                     if (checkbox.checked) li.addClass("is-checked");
                     else li.removeClass("is-checked");
 
+					this.suppressServiceRefresh = false;
                     this.refreshBtn?.removeClass("obsidoist-spinning");
                     return;
                 }
 
-                const { filter } = this.parseSourceConfig();
-			if (filter) {
-                    void this.maybeRefreshFilterFromRemote('event');
-                }
+				try {
+					const { filter } = this.parseSourceConfig();
+					debug('Codeblock sync start', { filter: filter || undefined });
+					if (filter) await this.service.syncFilterNow(filter);
+					else await this.service.syncNow();
 
-				void this.service.syncNow();
+					const file = this.sourceFile ?? this.app.workspace.getActiveFile();
+					debug('Codeblock syncDownSafe', { activeFile: file?.path });
+					if (file) {
+						await this.syncManager.syncDownSafe(file);
+					}
 
-                await this.refresh();
-
-                const activeFile = this.app.workspace.getActiveFile();
-                if (activeFile) {
-                    await this.syncManager.syncDown(activeFile);
-                }
-
-                setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+					debug('Codeblock refresh view');
+					await this.refresh();
+				} finally {
+					debug('Codeblock done', { id: task.id });
+					this.suppressServiceRefresh = false;
+					setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+				}
             };
             
             li.createEl("span", { text: task.content });
@@ -411,7 +421,7 @@ export class CodeBlockProcessor {
 		this.settings = settings;
     }
 
-    async process(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+    process(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
         // Pass ctx to the child
         const child = new ObsidoistTaskList(this.app, el, this.service, this.syncManager, this.settings, source, ctx);
         ctx.addChild(child);

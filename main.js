@@ -8689,6 +8689,33 @@ var import_obsidian5 = require("obsidian");
 
 // settings.ts
 var import_obsidian = require("obsidian");
+function confirmWithModal(app, title, message) {
+  return new Promise((resolve) => {
+    const modal = new class extends import_obsidian.Modal {
+      constructor(app2, onResult) {
+        super(app2);
+        this.onResult = onResult;
+      }
+      onOpen() {
+        this.titleEl.setText(title);
+        this.contentEl.createEl("p", { text: message });
+        const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
+        const cancel = buttons.createEl("button", { text: "Cancel" });
+        cancel.addEventListener("click", () => {
+          this.close();
+          this.onResult(false);
+        });
+        const ok = buttons.createEl("button", { text: "Confirm" });
+        ok.addClass("mod-cta");
+        ok.addEventListener("click", () => {
+          this.close();
+          this.onResult(true);
+        });
+      }
+    }(app, resolve);
+    modal.open();
+  });
+}
 var DEFAULT_SETTINGS = {
   todoistToken: "",
   syncTag: "#todoist",
@@ -8708,14 +8735,14 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Obsidoist Settings" });
-    containerEl.createEl("h3", { text: "Basic" });
-    new import_obsidian.Setting(containerEl).setName("Todoist API Token").setDesc("Your Todoist API token. You can find it in Todoist Settings > Integrations.").addText((text) => text.setPlaceholder("Enter your token").setValue(this.plugin.settings.todoistToken).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Obsidoist settings").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Basic").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your Todoist API token. You can find it in Todoist settings > Integrations.").addText((text) => text.setPlaceholder("Enter your token").setValue(this.plugin.settings.todoistToken).onChange(async (value) => {
       this.plugin.settings.todoistToken = value;
       await this.plugin.saveSettings();
       this.display();
     }));
-    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default Project").setDesc("New tasks will be created in this project by default. Leave empty for Inbox.");
+    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default project").setDesc("New tasks will be created in this project by default. Leave empty for Inbox.");
     if (this.plugin.settings.todoistToken) {
       this.plugin.todoistService.getProjects().then((projects) => {
         projectSetting.addDropdown((dropdown) => {
@@ -8740,12 +8767,12 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
     } else {
       projectSetting.setDesc("Enter API token to select project.");
     }
-    new import_obsidian.Setting(containerEl).setName("Sync Tag").setDesc("The tag used to identify tasks that should be synced with Todoist.").addText((text) => text.setPlaceholder("#todoist").setValue(this.plugin.settings.syncTag).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Sync tag").setDesc("The tag used to identify tasks that should be synced with Todoist.").addText((text) => text.setPlaceholder("#todoist").setValue(this.plugin.settings.syncTag).onChange(async (value) => {
       this.plugin.settings.syncTag = value;
       await this.plugin.saveSettings();
     }));
-    containerEl.createEl("h3", { text: "Sync" });
-    new import_obsidian.Setting(containerEl).setName("Codeblock auto refresh (seconds)").setDesc("How often obsidoist code blocks refresh themselves. Set 0 to disable.").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("Sync").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Code block auto refresh (seconds)").setDesc("How often Obsidoist code blocks refresh themselves. Set 0 to disable.").addText((text) => {
       var _a;
       return text.setPlaceholder("60").setValue(String((_a = this.plugin.settings.codeblockAutoRefreshSeconds) != null ? _a : 60)).onChange(async (value) => {
         const parsed = Number.parseInt(value.trim() || "0", 10);
@@ -8766,12 +8793,11 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("Sync now").setDesc("Flush pending local changes and refresh tasks.").addButton((btn) => btn.setButtonText("Sync").onClick(async () => {
       var _a;
       try {
-        await this.plugin.todoistService.syncNow();
         const file = this.plugin.app.workspace.getActiveFile();
-        if (file) {
-          await this.plugin.syncManager.syncDown(file);
-        }
-        this.plugin.todoistService.triggerRefresh();
+        if (file)
+          await this.plugin.syncManager.syncAfterQueue(file);
+        else
+          await this.plugin.todoistService.syncNow();
         new import_obsidian.Notice("Obsidoist: sync completed");
         this.display();
       } catch (e) {
@@ -8796,7 +8822,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    containerEl.createEl("h3", { text: "Cache" });
+    new import_obsidian.Setting(containerEl).setName("Cache").setHeading();
     new import_obsidian.Setting(containerEl).setName("Filter cache retention (days)").setDesc("Only affects cached filter results; does not delete Todoist tasks. Set to 0 to disable age-based pruning.").addText((text) => {
       var _a;
       return text.setPlaceholder("30").setValue(String((_a = this.plugin.settings.completedRetentionDays) != null ? _a : 30)).onChange(async (value) => {
@@ -8815,7 +8841,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian.Setting(containerEl).setName("Maintenance (advanced)").setDesc("Utilities for troubleshooting or reducing local data size. Most users do not need these.").addButton((btn) => btn.setButtonText("Prune filter cache").onClick(async () => {
+    new import_obsidian.Setting(containerEl).setName("Maintenance (advanced)").setDesc("Utilities for troubleshooting or reducing local data size. Most users do not need these.").addButton((btn) => btn.setButtonText("Prune filter cache").onClick(() => {
       this.plugin.todoistService.pruneCache({
         completedRetentionDays: this.plugin.settings.completedRetentionDays,
         maxFilterCacheEntries: this.plugin.settings.maxFilterCacheEntries
@@ -8823,7 +8849,9 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
       new import_obsidian.Notice("Obsidoist: filter cache pruned");
       this.display();
     })).addButton((btn) => btn.setButtonText("Prune local id mappings").onClick(async () => {
-      const ok = window.confirm(
+      const ok = await confirmWithModal(
+        this.app,
+        "Prune local id mappings",
         "Prune local id mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults."
       );
       if (!ok)
@@ -8841,13 +8869,13 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
           keep.add(id);
       }
       const re = /\[todoist_id:(local-[\w-]+)\]/g;
-      const files = this.app.vault.getMarkdownFiles ? this.app.vault.getMarkdownFiles() : this.app.vault.getFiles();
+      const vaultGet = this.app.vault;
+      const files = typeof vaultGet.getMarkdownFiles === "function" ? vaultGet.getMarkdownFiles() : this.app.vault.getFiles().filter((f) => f instanceof import_obsidian.TFile && f.extension === "md");
       for (const f of files) {
-        if (f.extension && f.extension !== "md")
-          continue;
         let text = "";
         try {
-          text = await this.app.vault.cachedRead ? this.app.vault.cachedRead(f) : this.app.vault.read(f);
+          const vaultRead = this.app.vault;
+          text = typeof vaultRead.cachedRead === "function" ? await vaultRead.cachedRead(f) : await this.app.vault.read(f);
         } catch (e) {
           continue;
         }
@@ -8863,14 +8891,18 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
       new import_obsidian.Notice(`Obsidoist: pruned ${removed} id mappings`);
       this.display();
     })).addButton((btn) => btn.setButtonText("Clear sync queue").onClick(async () => {
-      const ok = window.confirm("Clear all pending sync operations?\n\nThis will not delete tasks on Todoist, but may lose unsynced local changes.");
+      const ok = await confirmWithModal(
+        this.app,
+        "Clear sync queue",
+        "Clear all pending sync operations?\n\nThis will not delete tasks on Todoist, but may lose unsynced local changes."
+      );
       if (!ok)
         return;
       this.plugin.todoistService.clearQueue();
       new import_obsidian.Notice("Obsidoist: sync queue cleared");
       this.display();
     }));
-    containerEl.createEl("h3", { text: "Developer" });
+    new import_obsidian.Setting(containerEl).setName("Developer").setHeading();
     new import_obsidian.Setting(containerEl).setName("Debug logging").setDesc("Enable verbose logs in the developer console.").addToggle((toggle) => {
       var _a;
       return toggle.setValue((_a = this.plugin.settings.debugLogging) != null ? _a : false).onChange(async (value) => {
@@ -8904,9 +8936,12 @@ function createLocalId() {
   return `local-${Date.now().toString(16)}-${rand}`;
 }
 function createOperationId() {
-  const anyCrypto = globalThis.crypto;
-  if (anyCrypto && typeof anyCrypto.randomUUID === "function") {
-    return anyCrypto.randomUUID();
+  const cryptoValue = globalThis.crypto;
+  if (cryptoValue && typeof cryptoValue === "object") {
+    const randomUUID = cryptoValue.randomUUID;
+    if (typeof randomUUID === "function") {
+      return randomUUID.call(cryptoValue);
+    }
   }
   const bytes = new Uint8Array(16);
   for (let i = 0; i < 16; i++)
@@ -8919,22 +8954,25 @@ function createOperationId() {
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
 function migrateLocalState(raw) {
   const base = createDefaultLocalState();
-  if (!raw || typeof raw !== "object")
+  if (!isRecord(raw))
     return base;
   const state = raw;
   if (state.schemaVersion === 2) {
     const s = state;
-    if (!s.lineShadowById || typeof s.lineShadowById !== "object") {
+    const shadow = s.lineShadowById;
+    if (!isRecord(shadow)) {
       s.lineShadowById = {};
     }
     return s;
   }
   const queueRaw = Array.isArray(state.queue) ? state.queue : [];
   const queue = queueRaw.map((op) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
-    if (!op || typeof op !== "object" || typeof op.type !== "string")
+    if (!isRecord(op) || typeof op.type !== "string")
       return null;
     const opIdRaw = typeof op.opId === "string" ? op.opId : "";
     const opId = isUuid(opIdRaw) ? opIdRaw : createOperationId();
@@ -8944,8 +8982,8 @@ function migrateLocalState(raw) {
       return {
         type: "create",
         opId,
-        localId: String((_b = (_a = op.localId) != null ? _a : op.id) != null ? _b : ""),
-        content: String((_c = op.content) != null ? _c : ""),
+        localId: typeof op.localId === "string" ? op.localId : typeof op.id === "string" ? op.id : "",
+        content: typeof op.content === "string" ? op.content : "",
         projectId: typeof op.projectId === "string" ? op.projectId : void 0,
         dueDate: typeof op.dueDate === "string" ? op.dueDate : void 0,
         isCompleted: typeof op.isCompleted === "boolean" ? op.isCompleted : void 0,
@@ -8959,8 +8997,8 @@ function migrateLocalState(raw) {
       return {
         type: "move",
         opId,
-        id: String((_d = op.id) != null ? _d : ""),
-        projectId: String((_e = op.projectId) != null ? _e : ""),
+        id: typeof op.id === "string" ? op.id : "",
+        projectId: typeof op.projectId === "string" ? op.projectId : "",
         queuedAt,
         attempts,
         nextRetryAt: Number.isFinite(op.nextRetryAt) ? op.nextRetryAt : void 0,
@@ -8971,8 +9009,8 @@ function migrateLocalState(raw) {
       return {
         type: "update",
         opId,
-        id: String((_f = op.id) != null ? _f : ""),
-        content: String((_g = op.content) != null ? _g : ""),
+        id: typeof op.id === "string" ? op.id : "",
+        content: typeof op.content === "string" ? op.content : "",
         dueDate: typeof op.dueDate === "string" ? op.dueDate : void 0,
         queuedAt,
         attempts,
@@ -8984,7 +9022,7 @@ function migrateLocalState(raw) {
       return {
         type: op.type,
         opId,
-        id: String((_h = op.id) != null ? _h : ""),
+        id: typeof op.id === "string" ? op.id : "",
         queuedAt,
         attempts,
         nextRetryAt: Number.isFinite(op.nextRetryAt) ? op.nextRetryAt : void 0,
@@ -8995,19 +9033,30 @@ function migrateLocalState(raw) {
   }).filter((x) => Boolean(x));
   const merged = {
     schemaVersion: 2,
-    tasksById: state.tasksById && typeof state.tasksById === "object" ? state.tasksById : {},
-    projectsById: state.projectsById && typeof state.projectsById === "object" ? state.projectsById : {},
-    idAliasMap: state.idAliasMap && typeof state.idAliasMap === "object" ? state.idAliasMap : {},
-    filterResults: state.filterResults && typeof state.filterResults === "object" ? state.filterResults : {},
-    filterLastUsedAt: state.filterLastUsedAt && typeof state.filterLastUsedAt === "object" ? state.filterLastUsedAt : {},
+    tasksById: isRecord(state.tasksById) ? state.tasksById : {},
+    projectsById: isRecord(state.projectsById) ? state.projectsById : {},
+    idAliasMap: isRecord(state.idAliasMap) ? state.idAliasMap : {},
+    filterResults: isRecord(state.filterResults) ? state.filterResults : {},
+    filterLastUsedAt: isRecord(state.filterLastUsedAt) ? state.filterLastUsedAt : {},
     queue,
-    status: state.status && typeof state.status === "object" ? state.status : {},
-    lineShadowById: state.lineShadowById && typeof state.lineShadowById === "object" ? state.lineShadowById : {},
+    status: isRecord(state.status) ? state.status : {},
+    lineShadowById: isRecord(state.lineShadowById) ? state.lineShadowById : {},
     syncToken: typeof state.syncToken === "string" ? state.syncToken : void 0,
-    lastFullSyncAt: state.lastFullSyncAt,
-    lastProjectsSyncAt: state.lastProjectsSyncAt
+    lastFullSyncAt: typeof state.lastFullSyncAt === "number" ? state.lastFullSyncAt : void 0,
+    lastProjectsSyncAt: typeof state.lastProjectsSyncAt === "number" ? state.lastProjectsSyncAt : void 0
   };
   return merged;
+}
+
+// logger.ts
+var debugEnabled = false;
+function setDebugEnabled(enabled) {
+  debugEnabled = Boolean(enabled);
+}
+function debug(...args) {
+  if (!debugEnabled)
+    return;
+  console.debug("[Obsidoist]", ...args);
 }
 
 // todoistService.ts
@@ -9018,6 +9067,9 @@ var TodoistService = class extends import_obsidian2.Events {
     this.token = "";
     this.useSyncApi = true;
     this.isSyncRunning = false;
+    this.syncInFlight = null;
+    this.pendingFilterSync = null;
+    this.notifiedOpIds = /* @__PURE__ */ new Set();
     this.cachePolicy = { completedRetentionDays: 30, maxFilterCacheEntries: 50 };
     this.localState = localState;
     this.requestPersist = requestPersist;
@@ -9025,6 +9077,41 @@ var TodoistService = class extends import_obsidian2.Events {
     if (token) {
       this.api = new import_todoist_api_typescript.TodoistApi(token);
     }
+  }
+  hasAnyPendingOps() {
+    return this.localState.queue.length > 0;
+  }
+  normalizeLineShadows() {
+    var _a, _b, _c;
+    let didChange = false;
+    for (const [localId, remoteId] of Object.entries((_a = this.localState.idAliasMap) != null ? _a : {})) {
+      const localShadow = this.localState.lineShadowById[localId];
+      const remoteShadow = this.localState.lineShadowById[remoteId];
+      if (localShadow && remoteShadow) {
+        if (localShadow.content === remoteShadow.content) {
+          const merged = {
+            content: remoteShadow.content,
+            isCompleted: localShadow.isCompleted === false ? false : remoteShadow.isCompleted,
+            projectId: (_b = remoteShadow.projectId) != null ? _b : localShadow.projectId,
+            dueDate: (_c = remoteShadow.dueDate) != null ? _c : localShadow.dueDate
+          };
+          this.localState.lineShadowById[remoteId] = merged;
+        }
+        delete this.localState.lineShadowById[localId];
+        didChange = true;
+        continue;
+      }
+      if (localShadow && !remoteShadow) {
+        this.localState.lineShadowById[remoteId] = localShadow;
+        delete this.localState.lineShadowById[localId];
+        didChange = true;
+        continue;
+      }
+      if (!localShadow && remoteShadow)
+        continue;
+    }
+    if (didChange)
+      this.requestPersist();
   }
   updateToken(token) {
     this.token = token != null ? token : "";
@@ -9069,9 +9156,11 @@ var TodoistService = class extends import_obsidian2.Events {
       try {
         const json = (_b = res.json) != null ? _b : res.text ? JSON.parse(res.text) : void 0;
         details = json;
-        if (!ok && (json == null ? void 0 : json.error))
+        if (!ok && this.isRecord(json) && typeof json.error === "string") {
           message += ` ${json.error}`;
+        }
       } catch (e) {
+        details = void 0;
       }
       this.localState.status.lastSyncApiTestAt = this.now();
       this.localState.status.lastSyncApiTestResult = ok ? "ok" : "error";
@@ -9089,6 +9178,9 @@ var TodoistService = class extends import_obsidian2.Events {
   }
   now() {
     return Date.now();
+  }
+  isRecord(value) {
+    return typeof value === "object" && value !== null;
   }
   isUuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -9260,27 +9352,41 @@ var TodoistService = class extends import_obsidian2.Events {
     return this.localState.lastFullSyncAt;
   }
   getLineShadow(id) {
-    var _a;
     const canonical = this.resolveId(id);
-    return (_a = this.localState.lineShadowById) == null ? void 0 : _a[canonical];
+    return this.localState.lineShadowById[canonical];
   }
   setLineShadow(id, shadow) {
     const canonical = this.resolveId(id);
-    if (!this.localState.lineShadowById)
-      this.localState.lineShadowById = {};
     this.localState.lineShadowById[canonical] = shadow;
+    if (typeof id === "string" && id.startsWith("local-") && this.localState.idAliasMap[id]) {
+      delete this.localState.lineShadowById[id];
+    }
     this.requestPersist();
   }
   moveLineShadow(fromId, toId) {
-    if (!this.localState.lineShadowById)
+    const fromKey = String(fromId);
+    const toKey = String(toId);
+    if (fromKey === toKey)
       return;
-    const from = this.resolveId(fromId);
-    const to = this.resolveId(toId);
-    const val = this.localState.lineShadowById[from];
+    const candidates = [fromKey];
+    const resolvedFrom = this.resolveId(fromId);
+    if (String(resolvedFrom) !== fromKey)
+      candidates.push(String(resolvedFrom));
+    let val = void 0;
+    for (const k of candidates) {
+      const v = this.localState.lineShadowById[k];
+      if (v) {
+        val = v;
+        break;
+      }
+    }
     if (!val)
       return;
-    delete this.localState.lineShadowById[from];
-    this.localState.lineShadowById[to] = val;
+    for (const k of candidates) {
+      if (k !== toKey)
+        delete this.localState.lineShadowById[k];
+    }
+    this.localState.lineShadowById[toKey] = val;
     this.requestPersist();
   }
   hasPendingOpsForId(id) {
@@ -9381,7 +9487,7 @@ var TodoistService = class extends import_obsidian2.Events {
       return cached;
     }
   }
-  async getTasks(filter) {
+  getTasks(filter) {
     const now = this.now();
     const tasksById = this.localState.tasksById;
     const fromIds = (ids) => {
@@ -9400,18 +9506,19 @@ var TodoistService = class extends import_obsidian2.Events {
       this.requestPersist();
       const ids = this.localState.filterResults[normalizedFilter];
       if (ids)
-        return fromIds(ids);
-      return [];
+        return Promise.resolve(fromIds(ids));
+      return Promise.resolve([]);
     }
     const cachedActive = Object.values(tasksById).filter((t) => !t.isCompleted).sort((a, b) => {
       var _a, _b;
       return ((_a = b.updatedAt) != null ? _a : now) - ((_b = a.updatedAt) != null ? _b : now);
     }).map((t) => ({ id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId }));
-    return cachedActive;
+    return Promise.resolve(cachedActive);
   }
-  async createTask(content, projectId, dueDate) {
+  createTask(content, projectId, dueDate) {
     const localId = createLocalId();
     const now = this.now();
+    debug("enqueue:create", { localId, projectId: projectId || void 0 });
     const rec = {
       id: localId,
       content,
@@ -9427,10 +9534,11 @@ var TodoistService = class extends import_obsidian2.Events {
     this.enqueue({ type: "create", opId: createOperationId(), localId, content, projectId, dueDate, queuedAt: now, attempts: 0 });
     this.requestPersist();
     this.triggerRefresh();
-    return { id: localId, content, isCompleted: false, projectId };
+    return Promise.resolve({ id: localId, content, isCompleted: false, projectId });
   }
-  async closeTask(id) {
+  closeTask(id) {
     const canonical = this.resolveId(id);
+    debug("enqueue:close", { id, canonical });
     const task = this.localState.tasksById[canonical];
     if (task) {
       task.isCompleted = true;
@@ -9438,10 +9546,11 @@ var TodoistService = class extends import_obsidian2.Events {
       this.writeTask(task);
     }
     this.enqueue({ type: "close", opId: createOperationId(), id: canonical, queuedAt: this.now(), attempts: 0 });
-    return true;
+    return Promise.resolve(true);
   }
-  async reopenTask(id) {
+  reopenTask(id) {
     const canonical = this.resolveId(id);
+    debug("enqueue:reopen", { id, canonical });
     const task = this.localState.tasksById[canonical];
     if (task) {
       task.isCompleted = false;
@@ -9449,10 +9558,11 @@ var TodoistService = class extends import_obsidian2.Events {
       this.writeTask(task);
     }
     this.enqueue({ type: "reopen", opId: createOperationId(), id: canonical, queuedAt: this.now(), attempts: 0 });
-    return true;
+    return Promise.resolve(true);
   }
-  async updateTask(id, content, dueDate) {
+  updateTask(id, content, dueDate) {
     const canonical = this.resolveId(id);
+    debug("enqueue:update", { id, canonical });
     const task = this.localState.tasksById[canonical];
     if (task) {
       task.content = content;
@@ -9473,10 +9583,11 @@ var TodoistService = class extends import_obsidian2.Events {
       this.requestPersist();
     }
     this.enqueue({ type: "update", opId: createOperationId(), id: canonical, content, dueDate, queuedAt: this.now(), attempts: 0 });
-    return true;
+    return Promise.resolve(true);
   }
-  async moveTask(id, projectId) {
+  moveTask(id, projectId) {
     const canonical = this.resolveId(id);
+    debug("enqueue:move", { id, canonical, projectId });
     const task = this.localState.tasksById[canonical];
     if (task) {
       task.projectId = projectId;
@@ -9484,69 +9595,101 @@ var TodoistService = class extends import_obsidian2.Events {
       this.writeTask(task);
     }
     this.enqueue({ type: "move", opId: createOperationId(), id: canonical, projectId, queuedAt: this.now(), attempts: 0 });
-    return true;
+    return Promise.resolve(true);
   }
   async syncNow() {
     if (!this.api)
       return;
-    if (this.isSyncRunning)
-      return;
+    if (this.syncInFlight)
+      return this.syncInFlight;
     this.isSyncRunning = true;
-    this.localState.status.lastSyncStartedAt = this.now();
-    this.localState.status.lastErrorMessage = void 0;
-    this.localState.status.lastErrorAt = void 0;
-    this.requestPersist();
-    try {
-      await this.getProjects();
-      await this.flushQueueToRemote();
-      await this.refreshFromRemote({});
-      this.localState.status.lastSuccessfulSyncAt = this.now();
-      this.maybePruneCache();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.localState.status.lastErrorMessage = msg;
-      this.localState.status.lastErrorAt = this.now();
+    this.syncInFlight = (async () => {
+      debug("syncNow:start", { queue: this.localState.queue.length });
+      this.localState.status.lastSyncStartedAt = this.now();
+      this.localState.status.lastErrorMessage = void 0;
+      this.localState.status.lastErrorAt = void 0;
       this.requestPersist();
-    } finally {
-      this.localState.status.lastSyncFinishedAt = this.now();
-      this.isSyncRunning = false;
-      this.requestPersist();
-    }
+      try {
+        await this.getProjects();
+        await this.flushQueueToRemote({ triggerRefresh: false });
+        await this.refreshFromRemote({ triggerRefresh: false });
+        this.triggerRefresh();
+        this.localState.status.lastSuccessfulSyncAt = this.now();
+        this.maybePruneCache();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.localState.status.lastErrorMessage = msg;
+        this.localState.status.lastErrorAt = this.now();
+        this.requestPersist();
+      } finally {
+        debug("syncNow:finish", { queue: this.localState.queue.length, lastError: this.localState.status.lastErrorMessage });
+        this.localState.status.lastSyncFinishedAt = this.now();
+        this.isSyncRunning = false;
+        this.requestPersist();
+      }
+    })().finally(() => {
+      this.syncInFlight = null;
+      const pending = this.pendingFilterSync;
+      this.pendingFilterSync = null;
+      if (pending) {
+        void this.syncFilterNow(pending).catch((e) => {
+          console.error("[Obsidoist] Filter sync failed", e);
+        });
+      }
+    });
+    return this.syncInFlight;
   }
   async syncFilterNow(filter) {
     const normalized = (filter != null ? filter : "").trim();
     if (!normalized) {
-      await this.syncNow();
-      return;
+      return this.syncNow();
     }
     if (!this.api)
       return;
-    if (this.isSyncRunning)
-      return;
-    this.isSyncRunning = true;
-    this.localState.status.lastSyncStartedAt = this.now();
-    this.localState.status.lastErrorMessage = void 0;
-    this.localState.status.lastErrorAt = void 0;
-    this.requestPersist();
-    try {
-      await this.getProjects();
-      await this.flushQueueToRemote();
-      await this.refreshFromRemote({ filter: normalized });
-      this.localState.status.lastSuccessfulSyncAt = this.now();
-      this.maybePruneCache();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.localState.status.lastErrorMessage = msg;
-      this.localState.status.lastErrorAt = this.now();
-      this.requestPersist();
-    } finally {
-      this.localState.status.lastSyncFinishedAt = this.now();
-      this.isSyncRunning = false;
-      this.requestPersist();
+    if (this.syncInFlight) {
+      this.pendingFilterSync = normalized;
+      return this.syncInFlight;
     }
+    this.isSyncRunning = true;
+    this.syncInFlight = (async () => {
+      debug("syncFilterNow:start", { filter: normalized, queue: this.localState.queue.length });
+      this.localState.status.lastSyncStartedAt = this.now();
+      this.localState.status.lastErrorMessage = void 0;
+      this.localState.status.lastErrorAt = void 0;
+      this.requestPersist();
+      try {
+        await this.getProjects();
+        await this.flushQueueToRemote({ triggerRefresh: false });
+        await this.refreshFromRemote({ triggerRefresh: false });
+        await this.refreshFilterIdsViaRest(normalized, { triggerRefresh: false });
+        this.triggerRefresh();
+        this.localState.status.lastSuccessfulSyncAt = this.now();
+        this.maybePruneCache();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.localState.status.lastErrorMessage = msg;
+        this.localState.status.lastErrorAt = this.now();
+        this.requestPersist();
+      } finally {
+        debug("syncFilterNow:finish", { filter: normalized, queue: this.localState.queue.length, lastError: this.localState.status.lastErrorMessage });
+        this.localState.status.lastSyncFinishedAt = this.now();
+        this.isSyncRunning = false;
+        this.requestPersist();
+      }
+    })().finally(() => {
+      this.syncInFlight = null;
+      const pending = this.pendingFilterSync;
+      this.pendingFilterSync = null;
+      if (pending && pending !== normalized) {
+        void this.syncFilterNow(pending).catch((e) => {
+          console.error("[Obsidoist] Filter sync failed", e);
+        });
+      }
+    });
+    return this.syncInFlight;
   }
   async syncApiRequest(params) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     const token = ((_a = this.token) != null ? _a : "").trim();
     if (!token)
       throw new Error("Todoist API Token is empty.");
@@ -9571,38 +9714,44 @@ var TodoistService = class extends import_obsidian2.Events {
       const text = (_b = res.text) != null ? _b : "";
       throw new Error(`Sync API failed (HTTP ${res.status}) ${text}`);
     }
-    return (_d = res.json) != null ? _d : JSON.parse((_c = res.text) != null ? _c : "{}");
+    const json = (_c = res.json) != null ? _c : res.text ? JSON.parse(res.text) : {};
+    if (this.isRecord(json))
+      return json;
+    return {};
   }
   getSyncTokenForRequest() {
     return this.localState.syncToken ? this.localState.syncToken : "*";
   }
   applySyncApiProjects(projects) {
-    var _a;
     if (!projects)
       return;
     const now = this.now();
     for (const p of projects) {
-      if (!p || typeof p !== "object")
+      if (!this.isRecord(p))
         continue;
-      if (p.is_deleted) {
-        delete this.localState.projectsById[String(p.id)];
+      const id = typeof p.id === "string" || typeof p.id === "number" ? String(p.id) : "";
+      if (!id)
+        continue;
+      if (p.is_deleted === true) {
+        delete this.localState.projectsById[id];
         continue;
       }
-      this.localState.projectsById[String(p.id)] = { id: String(p.id), name: String((_a = p.name) != null ? _a : ""), updatedAt: now };
+      this.localState.projectsById[id] = { id, name: typeof p.name === "string" ? p.name : "", updatedAt: now };
     }
     this.localState.lastProjectsSyncAt = now;
   }
   applySyncApiItems(items) {
-    var _a, _b, _c;
     if (!items)
       return;
     const now = this.now();
     for (const it of items) {
-      if (!it || typeof it !== "object")
+      if (!this.isRecord(it))
         continue;
-      const id = String(it.id);
+      const id = typeof it.id === "string" || typeof it.id === "number" ? String(it.id) : "";
+      if (!id)
+        continue;
       const hasPending = this.hasPendingOpsForId(id);
-      if (it.is_deleted) {
+      if (it.is_deleted === true) {
         const existing = this.localState.tasksById[id];
         if (existing) {
           existing.isDeleted = true;
@@ -9622,18 +9771,17 @@ var TodoistService = class extends import_obsidian2.Events {
         continue;
       }
       const dueObj = it.due;
-      const dueDate = (_a = dueObj == null ? void 0 : dueObj.date) != null ? _a : (dueObj == null ? void 0 : dueObj.datetime) ? String(dueObj.datetime).slice(0, 10) : void 0;
-      const isRecurring = Boolean(dueObj == null ? void 0 : dueObj.is_recurring);
-      const isCompleted = Boolean(it.checked) || Boolean(it.is_archived);
+      const due = this.extractDueFromUnknown(dueObj);
+      const isCompleted = it.checked === true || it.is_archived === true;
       const local = this.localState.tasksById[id];
       if (!local) {
         this.localState.tasksById[id] = {
           id,
-          content: String((_b = it.content) != null ? _b : ""),
+          content: typeof it.content === "string" ? it.content : "",
           isCompleted,
-          projectId: it.project_id ? String(it.project_id) : void 0,
-          dueDate,
-          isRecurring,
+          projectId: typeof it.project_id === "string" || typeof it.project_id === "number" ? String(it.project_id) : void 0,
+          dueDate: due.dueDate,
+          isRecurring: due.isRecurring,
           isDeleted: false,
           source: "remote",
           updatedAt: now,
@@ -9644,16 +9792,34 @@ var TodoistService = class extends import_obsidian2.Events {
       local.lastRemoteSeenAt = now;
       if (hasPending)
         continue;
-      local.content = String((_c = it.content) != null ? _c : "");
+      local.content = typeof it.content === "string" ? it.content : "";
       local.isCompleted = isCompleted;
-      local.projectId = it.project_id ? String(it.project_id) : void 0;
-      local.dueDate = dueDate;
-      local.isRecurring = isRecurring;
+      local.projectId = typeof it.project_id === "string" || typeof it.project_id === "number" ? String(it.project_id) : void 0;
+      local.dueDate = due.dueDate;
+      local.isRecurring = due.isRecurring;
       local.isDeleted = false;
       local.source = "remote";
       local.updatedAt = now;
     }
     this.localState.lastFullSyncAt = now;
+  }
+  extractDueFromUnknown(value) {
+    if (!this.isRecord(value))
+      return {};
+    const dueDate = typeof value.date === "string" ? value.date : typeof value.datetime === "string" ? value.datetime.slice(0, 10) : void 0;
+    const isRecurring = value.is_recurring === true || value.isRecurring === true;
+    return { dueDate, isRecurring };
+  }
+  extractProjectIdFromTask(task) {
+    var _a;
+    const candidate = (_a = task.projectId) != null ? _a : task.project_id;
+    if (typeof candidate === "string" || typeof candidate === "number")
+      return String(candidate);
+    return void 0;
+  }
+  extractDueFromTask(task) {
+    const due = task.due;
+    return this.extractDueFromUnknown(due);
   }
   applySyncApiTempIdMapping(tempIdMapping) {
     if (!tempIdMapping)
@@ -9663,6 +9829,7 @@ var TodoistService = class extends import_obsidian2.Events {
       const localId = tempId;
       this.localState.idAliasMap[localId] = newId;
       didChange = true;
+      this.moveLineShadow(localId, newId);
       const existing = this.localState.tasksById[localId];
       if (existing && !this.localState.tasksById[newId]) {
         delete this.localState.tasksById[localId];
@@ -9693,7 +9860,7 @@ var TodoistService = class extends import_obsidian2.Events {
       this.requestPersist();
     }
   }
-  async refreshFromRemoteViaSyncApi() {
+  async refreshFromRemoteViaSyncApi(opts) {
     const now = this.now();
     try {
       const json = await this.syncApiRequest({
@@ -9707,7 +9874,8 @@ var TodoistService = class extends import_obsidian2.Events {
       this.applySyncApiItems(json.items);
       this.localState.status.lastSuccessfulSyncAt = now;
       this.requestPersist();
-      this.triggerRefresh();
+      if ((opts == null ? void 0 : opts.triggerRefresh) !== false)
+        this.triggerRefresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.localState.status.lastErrorMessage = msg;
@@ -9715,12 +9883,13 @@ var TodoistService = class extends import_obsidian2.Events {
       this.requestPersist();
     }
   }
-  async flushQueueToRemoteViaSyncApi() {
+  async flushQueueToRemoteViaSyncApi(opts) {
     const queue = this.localState.queue;
     if (queue.length === 0)
       return;
     const now = this.now();
     const syncToken = await this.ensureSyncToken();
+    debug("syncApi:flush:start", { queue: queue.length, syncToken: this.shorten(syncToken) });
     const commands = [];
     const createdToComplete = [];
     for (const op of queue) {
@@ -9767,21 +9936,33 @@ var TodoistService = class extends import_obsidian2.Events {
     }
     if (commands.length === 0)
       return;
+    debug("syncApi:flush:commands", { count: commands.length, types: commands.map((c) => c.type) });
     const json = await this.syncApiRequest({
       syncToken,
       resourceTypes: ["projects", "items"],
       commands
     });
+    debug("syncApi:flush:response", { hasSyncStatus: Boolean(json.sync_status), items: Array.isArray(json.items) ? json.items.length : 0 });
+    const itemsById = {};
+    if (Array.isArray(json.items)) {
+      for (const it of json.items) {
+        if (!this.isRecord(it))
+          continue;
+        const id = typeof it.id === "string" || typeof it.id === "number" ? String(it.id) : "";
+        if (!id)
+          continue;
+        itemsById[id] = it;
+      }
+    }
     if (typeof json.sync_token === "string")
       this.localState.syncToken = json.sync_token;
     this.applySyncApiTempIdMapping(json.temp_id_mapping);
     this.applySyncApiProjects(json.projects);
     this.applySyncApiItems(json.items);
-    const syncStatus = json.sync_status && typeof json.sync_status === "object" ? json.sync_status : {};
+    const syncStatus = this.isRecord(json.sync_status) ? json.sync_status : {};
     const cmdByUuid = {};
     for (const c of commands) {
-      if (c && typeof c === "object" && typeof c.uuid === "string")
-        cmdByUuid[c.uuid] = c;
+      cmdByUuid[c.uuid] = c;
     }
     for (let i = 0; i < queue.length; ) {
       const op = queue[i];
@@ -9791,12 +9972,35 @@ var TodoistService = class extends import_obsidian2.Events {
         continue;
       }
       if (status === "ok") {
+        if (op.type === "close" || op.type === "reopen") {
+          const id = this.resolveId(op.id);
+          const item = itemsById[id];
+          const confirmed = this.isRecord(item) ? (item.checked === true || item.is_archived === true) === (op.type === "close") : false;
+          if (!confirmed) {
+            debug("syncApi:op:notConfirmed", { type: op.type, id, opId: op.opId });
+            op.attempts += 1;
+            op.lastError = `Sync API ok but status not confirmed in response items. id=${id}`;
+            const delay2 = Math.min(30 * 60 * 1e3, 2e3 * Math.pow(2, Math.max(0, op.attempts - 1)));
+            op.nextRetryAt = this.now() + delay2;
+            const msg2 = `Todoist ${op.type === "close" ? "complete" : "reopen"} not confirmed yet; will retry.`;
+            this.localState.status.lastErrorMessage = msg2;
+            this.localState.status.lastErrorAt = this.now();
+            if (!this.notifiedOpIds.has(op.opId)) {
+              this.notifiedOpIds.add(op.opId);
+              new import_obsidian2.Notice(`Obsidoist: ${msg2}`);
+            }
+            i++;
+            continue;
+          }
+        }
+        debug("syncApi:op:ok", { type: op.type, opId: op.opId });
         queue.splice(i, 1);
         continue;
       }
       op.attempts += 1;
-      const msg = (status == null ? void 0 : status.error) ? String(status.error) : "Sync API command failed.";
-      const statusDetails = status && typeof status === "object" ? JSON.stringify(status) : String(status);
+      const msg = this.isRecord(status) && status.error !== void 0 ? String(status.error) : "Sync API command failed.";
+      debug("syncApi:op:error", { type: op.type, opId: op.opId, msg });
+      const statusDetails = this.isRecord(status) ? JSON.stringify(status) : String(status);
       const cmd = cmdByUuid[op.opId];
       const cmdDetails = cmd ? JSON.stringify({ type: cmd.type, args: cmd.args }) : "";
       op.lastError = `${msg}${statusDetails ? ` details=${statusDetails}` : ""}${cmdDetails ? ` cmd=${cmdDetails}` : ""}`;
@@ -9804,6 +10008,10 @@ var TodoistService = class extends import_obsidian2.Events {
       op.nextRetryAt = this.now() + delay;
       this.localState.status.lastErrorMessage = msg;
       this.localState.status.lastErrorAt = this.now();
+      if ((op.type === "close" || op.type === "reopen") && !this.notifiedOpIds.has(op.opId)) {
+        this.notifiedOpIds.add(op.opId);
+        new import_obsidian2.Notice(`Obsidoist: ${op.type === "close" ? "complete" : "reopen"} failed; will retry. ${msg}`);
+      }
       i++;
     }
     if (createdToComplete.length > 0) {
@@ -9830,10 +10038,11 @@ var TodoistService = class extends import_obsidian2.Events {
       }
     }
     this.requestPersist();
-    this.triggerRefresh();
+    if ((opts == null ? void 0 : opts.triggerRefresh) !== false)
+      this.triggerRefresh();
   }
   async refreshFromRemoteViaRest() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
+    var _a, _b;
     const now = this.now();
     let tasks;
     try {
@@ -9848,13 +10057,14 @@ var TodoistService = class extends import_obsidian2.Events {
       const local = this.localState.tasksById[task.id];
       const hasPending = this.hasPendingOpsForId(task.id);
       if (!local) {
+        const due2 = this.extractDueFromTask(task);
         this.localState.tasksById[task.id] = {
           id: task.id,
           content: task.content,
           isCompleted: (_a = task.isCompleted) != null ? _a : false,
-          projectId: (_b = task.projectId) != null ? _b : task.project_id,
-          dueDate: (_e = (_c = task.due) == null ? void 0 : _c.date) != null ? _e : ((_d = task.due) == null ? void 0 : _d.datetime) ? String(task.due.datetime).slice(0, 10) : void 0,
-          isRecurring: Boolean((_h = (_f = task.due) == null ? void 0 : _f.isRecurring) != null ? _h : (_g = task.due) == null ? void 0 : _g.is_recurring),
+          projectId: this.extractProjectIdFromTask(task),
+          dueDate: due2.dueDate,
+          isRecurring: due2.isRecurring,
           isDeleted: false,
           source: "remote",
           updatedAt: now,
@@ -9866,10 +10076,11 @@ var TodoistService = class extends import_obsidian2.Events {
       if (hasPending)
         continue;
       local.content = task.content;
-      local.isCompleted = (_i = task.isCompleted) != null ? _i : false;
-      local.projectId = (_j = task.projectId) != null ? _j : task.project_id;
-      local.dueDate = (_m = (_k = task.due) == null ? void 0 : _k.date) != null ? _m : ((_l = task.due) == null ? void 0 : _l.datetime) ? String(task.due.datetime).slice(0, 10) : void 0;
-      local.isRecurring = Boolean((_p = (_n = task.due) == null ? void 0 : _n.isRecurring) != null ? _p : (_o = task.due) == null ? void 0 : _o.is_recurring);
+      local.isCompleted = (_b = task.isCompleted) != null ? _b : false;
+      const due = this.extractDueFromTask(task);
+      local.projectId = this.extractProjectIdFromTask(task);
+      local.dueDate = due.dueDate;
+      local.isRecurring = due.isRecurring;
       local.source = "remote";
       local.updatedAt = now;
     }
@@ -9889,8 +10100,7 @@ var TodoistService = class extends import_obsidian2.Events {
     this.requestPersist();
     this.triggerRefresh();
   }
-  async refreshFromRemoteFilterViaRest(filter) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
+  async refreshFilterIdsViaRest(filter, opts) {
     const now = this.now();
     let tasks;
     try {
@@ -9903,15 +10113,15 @@ var TodoistService = class extends import_obsidian2.Events {
     for (const task of tasks) {
       filterIds.push(task.id);
       const local = this.localState.tasksById[task.id];
-      const hasPending = this.hasPendingOpsForId(task.id);
       if (!local) {
+        const due2 = this.extractDueFromTask(task);
         this.localState.tasksById[task.id] = {
           id: task.id,
           content: task.content,
-          isCompleted: (_a = task.isCompleted) != null ? _a : false,
-          projectId: (_b = task.projectId) != null ? _b : task.project_id,
-          dueDate: (_e = (_c = task.due) == null ? void 0 : _c.date) != null ? _e : ((_d = task.due) == null ? void 0 : _d.datetime) ? String(task.due.datetime).slice(0, 10) : void 0,
-          isRecurring: Boolean((_h = (_f = task.due) == null ? void 0 : _f.isRecurring) != null ? _h : (_g = task.due) == null ? void 0 : _g.is_recurring),
+          isCompleted: false,
+          projectId: this.extractProjectIdFromTask(task),
+          dueDate: due2.dueDate,
+          isRecurring: due2.isRecurring,
           isDeleted: false,
           source: "remote",
           updatedAt: now,
@@ -9920,34 +10130,31 @@ var TodoistService = class extends import_obsidian2.Events {
         continue;
       }
       local.lastRemoteSeenAt = now;
-      if (hasPending)
+      if (this.hasPendingOpsForId(task.id))
         continue;
       local.content = task.content;
-      local.isCompleted = (_i = task.isCompleted) != null ? _i : false;
-      local.projectId = (_j = task.projectId) != null ? _j : task.project_id;
-      local.dueDate = (_m = (_k = task.due) == null ? void 0 : _k.date) != null ? _m : ((_l = task.due) == null ? void 0 : _l.datetime) ? String(task.due.datetime).slice(0, 10) : void 0;
-      local.isRecurring = Boolean((_p = (_n = task.due) == null ? void 0 : _n.isRecurring) != null ? _p : (_o = task.due) == null ? void 0 : _o.is_recurring);
+      const due = this.extractDueFromTask(task);
+      local.projectId = this.extractProjectIdFromTask(task);
+      local.dueDate = due.dueDate;
+      local.isRecurring = due.isRecurring;
       local.source = "remote";
       local.updatedAt = now;
     }
     this.localState.filterResults[filter] = filterIds;
     this.localState.filterLastUsedAt[filter] = now;
     this.requestPersist();
-    this.triggerRefresh();
+    if ((opts == null ? void 0 : opts.triggerRefresh) !== false)
+      this.triggerRefresh();
   }
-  async flushQueueToRemote() {
+  async flushQueueToRemote(opts) {
     if (!this.api)
       return;
-    await this.flushQueueToRemoteViaSyncApi();
+    await this.flushQueueToRemoteViaSyncApi(opts);
   }
   async refreshFromRemote(opts) {
     if (!this.api)
       return;
-    if (opts.filter) {
-      await this.refreshFromRemoteFilterViaRest(opts.filter);
-      return;
-    }
-    await this.refreshFromRemoteViaSyncApi();
+    await this.refreshFromRemoteViaSyncApi(opts);
   }
   triggerRefresh() {
     this.trigger("refresh");
@@ -9956,23 +10163,10 @@ var TodoistService = class extends import_obsidian2.Events {
 
 // syncManager.ts
 var import_obsidian3 = require("obsidian");
-
-// logger.ts
-var debugEnabled = false;
-function setDebugEnabled(enabled) {
-  debugEnabled = Boolean(enabled);
-}
-function debug(...args) {
-  if (!debugEnabled)
-    return;
-  console.log("[Obsidoist]", ...args);
-}
-
-// syncManager.ts
 var SyncManager = class {
   constructor(app, service, settings) {
-    // Callback to set internal sync flag in main plugin
-    this.internalSyncCallback = null;
+    this.syncChain = Promise.resolve();
+    this.lastInternalModifyAtByPath = /* @__PURE__ */ new Map();
     // Cache for projects
     this.projects = [];
     this.lastProjectFetch = 0;
@@ -10000,13 +10194,50 @@ var SyncManager = class {
   get dueRegex() {
     return /(?:🗓️?|📅)\s*(\d{4}-\d{2}-\d{2})/;
   }
-  setInternalSyncCallback(callback) {
-    this.internalSyncCallback = callback;
+  enqueueSync(fn) {
+    const run = async () => {
+      try {
+        await fn();
+      } catch (e) {
+        console.error("[Obsidoist] Sync failed", e);
+      }
+    };
+    const next = this.syncChain.then(run, run);
+    this.syncChain = next;
+    return next;
   }
-  setInternalSync(isSyncing) {
-    if (this.internalSyncCallback) {
-      this.internalSyncCallback(isSyncing);
-    }
+  syncFile(file) {
+    return this.enqueueSync(async () => {
+      debug("syncFile:start", { path: file.path });
+      await this.scanAndSyncFile(file);
+      await this.service.syncNow();
+      await this.syncDown(file);
+      this.service.triggerRefresh();
+      debug("syncFile:done", { path: file.path });
+    });
+  }
+  syncAfterQueue(file) {
+    return this.enqueueSync(async () => {
+      debug("syncAfterQueue:start", { path: file.path });
+      await this.service.syncNow();
+      await this.syncDown(file);
+      this.service.triggerRefresh();
+      debug("syncAfterQueue:done", { path: file.path });
+    });
+  }
+  syncDownSafe(file) {
+    return this.enqueueSync(async () => {
+      debug("syncDownSafe:start", { path: file.path });
+      await this.syncDown(file);
+      this.service.triggerRefresh();
+      debug("syncDownSafe:done", { path: file.path });
+    });
+  }
+  isLikelyInternalModify(file) {
+    const at = this.lastInternalModifyAtByPath.get(file.path);
+    if (!at)
+      return false;
+    return Date.now() - at < 2e3;
   }
   async ensureProjects() {
     if (Date.now() - this.lastProjectFetch > 3e5 || this.projects.length === 0) {
@@ -10093,20 +10324,26 @@ var SyncManager = class {
             prevSig = { content: cached.content, dueDate: cached.dueDate, projectId: cached.projectId, isCompleted: cached.isCompleted };
           }
           if (!prevSig) {
+            debug("scan:missingPrevSig", { id: existingId, hasCached: Boolean(cached), isCompleted: currentSig.isCompleted });
             this.service.setLineShadow(existingId, currentSig);
             continue;
           }
-          if (this.sigEquals(prevSig, currentSig))
+          if (this.sigEquals(prevSig, currentSig)) {
+            debug("scan:noChange", { id: existingId, isCompleted: currentSig.isCompleted });
             continue;
+          }
           if (prevSig.content !== currentSig.content || ((_a = prevSig.dueDate) != null ? _a : void 0) !== ((_b = currentSig.dueDate) != null ? _b : void 0)) {
+            debug("scan:enqueue:update", { id: existingId });
             const success = await this.service.updateTask(existingId, taskContent, dueDate);
             if (success)
               new import_obsidian3.Notice(`Updated Todoist task: ${taskContent.substring(0, 20)}...`);
           }
           if (currentSig.projectId && ((_c = prevSig.projectId) != null ? _c : void 0) !== currentSig.projectId) {
+            debug("scan:enqueue:move", { id: existingId, projectId: currentSig.projectId });
             await this.service.moveTask(existingId, currentSig.projectId);
           }
           if (prevSig.isCompleted !== currentSig.isCompleted) {
+            debug("scan:enqueue:toggle", { id: existingId, from: prevSig.isCompleted, to: currentSig.isCompleted });
             if (currentSig.isCompleted)
               await this.service.closeTask(existingId);
             else
@@ -10144,12 +10381,8 @@ var SyncManager = class {
     }
     if (modified) {
       debug("Modifying file with new IDs.");
-      this.setInternalSync(true);
-      try {
-        await this.app.vault.modify(file, newLines.join("\n"));
-      } finally {
-        setTimeout(() => this.setInternalSync(false), 1500);
-      }
+      this.lastInternalModifyAtByPath.set(file.path, Date.now());
+      await this.app.vault.modify(file, newLines.join("\n"));
     }
   }
   async syncDown(file) {
@@ -10173,6 +10406,10 @@ var SyncManager = class {
           this.service.moveLineShadow(rawId, existingId);
         }
         if (cachedTask) {
+          if (this.service.hasPendingOpsForId(existingId)) {
+            debug(`syncDown skip due to pending ops for ${existingId}`);
+            continue;
+          }
           if (cachedTask.isDeleted) {
             const indentMatch = line.match(/^(\s*)/);
             const indent = indentMatch ? indentMatch[1] : "";
@@ -10190,6 +10427,36 @@ var SyncManager = class {
             const remoteContent = cachedTask.content;
             const localDueDate = this.extractDueDate(line);
             const remoteDueDate = cachedTask.dueDate;
+            const remoteSig = {
+              content: remoteContent,
+              isCompleted: cachedTask.isCompleted,
+              projectId: cachedTask.projectId,
+              dueDate: remoteDueDate
+            };
+            let localProjectId = void 0;
+            for (const project of this.projects) {
+              const normalizedProjectName = project.name.replace(/\s+/g, "");
+              const tag = `#${normalizedProjectName}`;
+              if (new RegExp(tag, "i").test(line)) {
+                localProjectId = project.id;
+                break;
+              }
+            }
+            const localSig = {
+              content: localContent,
+              isCompleted: currentStatus !== " ",
+              projectId: localProjectId,
+              dueDate: localDueDate
+            };
+            const shadowSig = this.service.getLineShadow(existingId);
+            if (shadowSig && !this.sigEquals(shadowSig, localSig)) {
+              debug(`syncDown skip due to unprocessed local edits for ${existingId}`);
+              continue;
+            }
+            if (shadowSig && this.sigEquals(shadowSig, localSig) && !this.sigEquals(shadowSig, remoteSig)) {
+              debug(`syncDown skip due to shadowSig divergence for ${existingId}`);
+              continue;
+            }
             let lineModified = false;
             if (currentStatus !== remoteStatus) {
               debug(`Task ${existingId} status changed: ${currentStatus} -> ${remoteStatus}`);
@@ -10201,15 +10468,6 @@ var SyncManager = class {
             }
             if ((localDueDate != null ? localDueDate : void 0) !== (remoteDueDate != null ? remoteDueDate : void 0)) {
               lineModified = true;
-            }
-            let localProjectId = void 0;
-            for (const project of this.projects) {
-              const normalizedProjectName = project.name.replace(/\s+/g, "");
-              const tag = `#${normalizedProjectName}`;
-              if (new RegExp(tag, "i").test(line)) {
-                localProjectId = project.id;
-                break;
-              }
             }
             if ((localProjectId != null ? localProjectId : void 0) !== ((_a = cachedTask.projectId) != null ? _a : void 0)) {
               lineModified = true;
@@ -10230,26 +10488,11 @@ var SyncManager = class {
               newLines[i] = `${indent}- [${remoteStatus}] ${remoteContent}${dueSuffix} ${this.settings.syncTag}${projectTag} [todoist_id:${existingId}]`;
               newLines[i] = newLines[i].replace(/\s+/g, " ");
               modified = true;
-            }
-          }
-        } else {
-          const lastFullSyncAt = this.service.getLastFullSyncAt();
-          const isFresh = lastFullSyncAt && Date.now() - lastFullSyncAt < 3e5;
-          if (isFresh && /^\d+$/.test(existingId)) {
-            debug(`Task ${existingId} not found in cache after recent sync. Assuming completed.`);
-            const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
-            if (statusMatch) {
-              const currentStatus = statusMatch[2];
-              if (currentStatus !== "x") {
-                newLines[i] = line.replace(/^(\s*-\s\[)(.)(\])/, "$1x$3");
-                modified = true;
-              }
-              const basisLine = modified ? newLines[i] : line;
               this.service.setLineShadow(existingId, {
-                content: this.extractContent(basisLine, true),
-                dueDate: this.extractDueDate(basisLine),
-                projectId: this.findProjectByTag(this.extractContent(basisLine, false)),
-                isCompleted: true
+                content: remoteContent,
+                isCompleted: cachedTask.isCompleted,
+                projectId: cachedTask.projectId,
+                dueDate: remoteDueDate
               });
             }
           }
@@ -10258,21 +10501,46 @@ var SyncManager = class {
     }
     if (modified) {
       debug("Modifying file with updates.");
-      this.setInternalSync(true);
-      try {
-        await this.app.vault.modify(file, newLines.join("\n"));
-      } finally {
-        setTimeout(() => this.setInternalSync(false), 1500);
-      }
+      this.lastInternalModifyAtByPath.set(file.path, Date.now());
+      await this.app.vault.modify(file, newLines.join("\n"));
     } else {
       debug("No changes needed for file.");
     }
+  }
+  async primeFileShadows(file) {
+    if (!file)
+      return;
+    await this.enqueueSync(async () => {
+      debug("primeFileShadows:start", { path: file.path });
+      await this.ensureProjects();
+      const content = await this.app.vault.read(file);
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const idMatch = line.match(this.idRegex);
+        if (!idMatch)
+          continue;
+        const rawId = idMatch[1];
+        const existingId = this.service.resolveTaskId(rawId);
+        if (this.service.getLineShadow(existingId))
+          continue;
+        const statusMatch = line.match(/^(\s*)-\s\[(.)\]/);
+        if (!statusMatch)
+          continue;
+        const isCompleted = statusMatch[2] !== " ";
+        const taskContent = this.extractContent(line, true);
+        const dueDate = this.extractDueDate(line);
+        const rawContentWithTags = this.extractContent(line, false);
+        const tagProjectId = this.findProjectByTag(rawContentWithTags);
+        this.service.setLineShadow(existingId, { content: taskContent, dueDate, projectId: tagProjectId, isCompleted });
+      }
+      debug("primeFileShadows:done", { path: file.path });
+    });
   }
   async syncDownIfHasLocalIds(file) {
     const content = await this.app.vault.read(file);
     if (!/\[todoist_id:local-[\w-]+\]/.test(content))
       return;
-    await this.syncDown(file);
+    await this.syncDownSafe(file);
   }
 };
 
@@ -10281,6 +10549,7 @@ var import_obsidian4 = require("obsidian");
 var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
   constructor(app, container, service, syncManager, settings, source, ctx) {
     super(container);
+    this.sourceFile = null;
     // DOM Elements
     this.wrapper = null;
     this.header = null;
@@ -10303,7 +10572,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     this.container = container;
     this.ctx = ctx;
   }
-  async onload() {
+  onload() {
+    const abstract = this.app.vault.getAbstractFileByPath(this.ctx.sourcePath);
+    this.sourceFile = abstract instanceof import_obsidian4.TFile ? abstract : null;
     this.codeBlockWrapper = this.findCodeBlockWrapperAndTag();
     if (this.codeBlockWrapper) {
       this.hideNativeEditButtons(this.codeBlockWrapper);
@@ -10317,7 +10588,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       });
     }
     this.buildDom();
-    await this.refresh();
+    void this.refresh().catch((e) => {
+      console.error("[Obsidoist] Initial refresh failed", e);
+    });
     this.startAutoRefreshIfNeeded();
     this.registerEvent(this.service.on("refresh", () => {
       debug("View received refresh event. Re-rendering.");
@@ -10326,7 +10599,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
         this.refreshBtn.addClass("obsidoist-spinning");
       }
-      this.refresh().finally(() => {
+      void this.refresh().catch((e) => {
+        console.error("[Obsidoist] Refresh failed", e);
+      }).finally(() => {
         setTimeout(() => {
           var _a;
           return (_a = this.refreshBtn) == null ? void 0 : _a.removeClass("obsidoist-spinning");
@@ -10398,9 +10673,6 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       }
       this.suppressServiceRefresh = true;
       await this.service.syncFilterNow(filter);
-      const activeFile = this.app.workspace.getActiveFile();
-      if (activeFile)
-        await this.syncManager.syncDown(activeFile);
       if (source !== "render") {
         await this.refresh();
       }
@@ -10434,14 +10706,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     for (const nativeBtn of nativeButtons) {
       if (!(nativeBtn instanceof HTMLElement))
         continue;
-      nativeBtn.style.setProperty("display", "none", "important");
-      nativeBtn.style.setProperty("visibility", "hidden", "important");
-      nativeBtn.style.setProperty("opacity", "0", "important");
-      nativeBtn.style.setProperty("pointer-events", "none", "important");
-      nativeBtn.style.setProperty("width", "0", "important");
-      nativeBtn.style.setProperty("height", "0", "important");
-      nativeBtn.style.setProperty("padding", "0", "important");
-      nativeBtn.style.setProperty("margin", "0", "important");
+      nativeBtn.classList.add("obsidoist-native-edit-hidden");
     }
   }
   // Build the static DOM structure once
@@ -10450,6 +10715,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     this.wrapper = this.container.createDiv({ cls: "obsidoist-list" });
     this.header = this.wrapper.createDiv({ cls: "obsidoist-header" });
     const title = this.header.createDiv({ cls: "obsidoist-title" });
+    const { name } = this.parseSourceConfig();
+    if (name)
+      title.setText(name);
     const controls = this.header.createDiv({ cls: "obsidoist-controls" });
     this.refreshBtn = controls.createEl("button", {
       cls: "obsidoist-refresh-btn",
@@ -10457,18 +10725,20 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     });
     (0, import_obsidian4.setIcon)(this.refreshBtn, "refresh-cw");
     this.refreshBtn.onclick = async () => {
-      var _a, _b;
+      var _a, _b, _c;
       if ((_a = this.refreshBtn) == null ? void 0 : _a.hasClass("obsidoist-spinning"))
         return;
       (_b = this.refreshBtn) == null ? void 0 : _b.addClass("obsidoist-spinning");
       try {
+        this.suppressServiceRefresh = true;
         const { filter } = this.parseSourceConfig();
+        const file = (_c = this.sourceFile) != null ? _c : this.app.workspace.getActiveFile();
+        if (file)
+          await this.syncManager.syncFile(file);
         await this.service.syncFilterNow(filter);
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile)
-          await this.syncManager.syncDown(activeFile);
         await this.refresh();
       } finally {
+        this.suppressServiceRefresh = false;
         setTimeout(() => {
           var _a2;
           return (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("obsidoist-spinning");
@@ -10565,8 +10835,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
         li.addClass("is-checked");
       }
       checkbox.onchange = async () => {
-        var _a2;
+        var _a2, _b;
         const nextCompleted = checkbox.checked;
+        debug("Codeblock checkbox change", { id: task.id, nextCompleted });
         if (nextCompleted) {
           li.addClass("is-checked");
         } else {
@@ -10576,6 +10847,8 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
           this.refreshBtn.addClass("obsidoist-spinning");
         }
         try {
+          this.suppressServiceRefresh = true;
+          debug("Codeblock enqueue op", { id: task.id, op: nextCompleted ? "close" : "reopen" });
           if (nextCompleted)
             await this.service.closeTask(task.id);
           else
@@ -10587,23 +10860,32 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
             li.addClass("is-checked");
           else
             li.removeClass("is-checked");
+          this.suppressServiceRefresh = false;
           (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("obsidoist-spinning");
           return;
         }
-        const { filter } = this.parseSourceConfig();
-        if (filter) {
-          void this.maybeRefreshFilterFromRemote("event");
+        try {
+          const { filter } = this.parseSourceConfig();
+          debug("Codeblock sync start", { filter: filter || void 0 });
+          if (filter)
+            await this.service.syncFilterNow(filter);
+          else
+            await this.service.syncNow();
+          const file = (_b = this.sourceFile) != null ? _b : this.app.workspace.getActiveFile();
+          debug("Codeblock syncDownSafe", { activeFile: file == null ? void 0 : file.path });
+          if (file) {
+            await this.syncManager.syncDownSafe(file);
+          }
+          debug("Codeblock refresh view");
+          await this.refresh();
+        } finally {
+          debug("Codeblock done", { id: task.id });
+          this.suppressServiceRefresh = false;
+          setTimeout(() => {
+            var _a3;
+            return (_a3 = this.refreshBtn) == null ? void 0 : _a3.removeClass("obsidoist-spinning");
+          }, 500);
         }
-        void this.service.syncNow();
-        await this.refresh();
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile) {
-          await this.syncManager.syncDown(activeFile);
-        }
-        setTimeout(() => {
-          var _a3;
-          return (_a3 = this.refreshBtn) == null ? void 0 : _a3.removeClass("obsidoist-spinning");
-        }, 500);
       };
       li.createEl("span", { text: task.content });
     }
@@ -10616,7 +10898,7 @@ var CodeBlockProcessor = class {
     this.syncManager = syncManager;
     this.settings = settings;
   }
-  async process(source, el, ctx) {
+  process(source, el, ctx) {
     const child = new ObsidoistTaskList(this.app, el, this.service, this.syncManager, this.settings, source, ctx);
     ctx.addChild(child);
   }
@@ -10640,8 +10922,6 @@ var ObsidoistPlugin = class extends import_obsidian5.Plugin {
     super(...arguments);
     this.requestPersist = null;
     this.autoSyncIntervalId = null;
-    // Flag to ignore modify events triggered by internal sync
-    this.isInternalSync = false;
   }
   async onload() {
     var _a, _b;
@@ -10654,6 +10934,7 @@ var ObsidoistPlugin = class extends import_obsidian5.Plugin {
       var _a2;
       return (_a2 = this.requestPersist) == null ? void 0 : _a2.call(this);
     });
+    this.todoistService.normalizeLineShadows();
     this.todoistService.setUseSyncApi((_b = this.settings.useSyncApi) != null ? _b : true);
     this.todoistService.updateCachePolicy({
       completedRetentionDays: this.settings.completedRetentionDays,
@@ -10671,49 +10952,52 @@ var ObsidoistPlugin = class extends import_obsidian5.Plugin {
     this.registerMarkdownCodeBlockProcessor("obsidoist", (source, el, ctx) => {
       this.codeBlockProcessor.process(source, el, ctx);
     });
-    const performSync = async (file) => {
-      debug(`Debounced sync executing for ${file.path}. Internal sync flag: ${this.isInternalSync}`);
-      if (this.isInternalSync) {
-        debug("Skipping sync due to internal flag.");
-        return;
-      }
-      await this.syncManager.scanAndSyncFile(file);
-      this.todoistService.triggerRefresh();
-    };
-    const debouncedSync = customDebounce(performSync, 2e3);
-    this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => {
-      if (this.isInternalSync)
-        return;
-      if (info.file instanceof import_obsidian5.TFile && info.file.extension === "md") {
-        debouncedSync(info.file);
-      }
-    }));
-    this.registerEvent(this.app.vault.on("modify", (file) => {
-      if (this.isInternalSync)
-        return;
+    const active = this.app.workspace.getActiveFile();
+    if (active)
+      void this.syncManager.primeFileShadows(active);
+    this.registerEvent(this.app.workspace.on("file-open", (file) => {
       if (file instanceof import_obsidian5.TFile && file.extension === "md") {
-        debouncedSync(file);
+        void this.syncManager.primeFileShadows(file);
       }
     }));
-    this.syncManager.setInternalSyncCallback((isSyncing) => {
-      debug(`Setting internal sync flag to: ${isSyncing}`);
-      this.isInternalSync = isSyncing;
-    });
+    const performSync = async (file) => {
+      debug(`Debounced sync executing for ${file.path}.`);
+      await this.syncManager.syncFile(file);
+    };
+    const debouncedSyncByPath = /* @__PURE__ */ new Map();
+    const scheduleDebouncedSync = (file) => {
+      const path = file.path;
+      let debounced = debouncedSyncByPath.get(path);
+      if (!debounced) {
+        debounced = customDebounce(() => {
+          const f = this.app.vault.getAbstractFileByPath(path);
+          if (f instanceof import_obsidian5.TFile)
+            void performSync(f);
+        }, 2e3);
+        debouncedSyncByPath.set(path, debounced);
+      }
+      debounced();
+    };
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (file instanceof import_obsidian5.TFile && file.extension === "md") {
+        if (this.syncManager.isLikelyInternalModify(file))
+          return;
+        scheduleDebouncedSync(file);
+      }
+    }));
     this.addCommand({
       id: "sync-todoist-file",
       name: "Sync current file from Todoist",
       callback: async () => {
         const file = this.app.workspace.getActiveFile();
         if (file) {
-          await this.todoistService.syncNow();
-          await this.syncManager.syncDown(file);
-          await this.syncManager.scanAndSyncFile(file);
+          await this.syncManager.syncFile(file);
           this.todoistService.triggerRefresh();
         }
       }
     });
   }
-  async onunload() {
+  onunload() {
     if (this.autoSyncIntervalId !== null) {
       window.clearInterval(this.autoSyncIntervalId);
       this.autoSyncIntervalId = null;
@@ -10728,12 +11012,9 @@ var ObsidoistPlugin = class extends import_obsidian5.Plugin {
     if (!Number.isFinite(seconds) || seconds <= 0)
       return;
     this.autoSyncIntervalId = window.setInterval(() => {
-      void (async () => {
-        await this.todoistService.syncNow();
-        const file = this.app.workspace.getActiveFile();
-        if (file)
-          await this.syncManager.syncDown(file);
-      })();
+      const file = this.app.workspace.getActiveFile();
+      if (file)
+        void this.syncManager.syncFile(file);
     }, seconds * 1e3);
   }
   async loadPluginData() {
@@ -10745,7 +11026,8 @@ var ObsidoistPlugin = class extends import_obsidian5.Plugin {
       this.localState = migrateLocalState(data.local);
       return;
     }
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, raw != null ? raw : {});
+    const settings = raw && typeof raw === "object" ? raw : {};
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
     this.localState = createDefaultLocalState();
   }
   async savePluginData() {

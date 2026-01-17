@@ -1,4 +1,4 @@
-import { Plugin, TFile, Editor, MarkdownView, MarkdownFileInfo, WorkspaceLeaf } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { ObsidoistSettings, DEFAULT_SETTINGS, ObsidoistSettingTab } from './settings';
 import { TodoistService } from './todoistService';
 import { SyncManager } from './syncManager';
@@ -8,7 +8,7 @@ import { setDebugEnabled } from './logger';
 import { debug } from './logger';
 
 // Custom debounce implementation to ensure consistent behavior
-function customDebounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
+function customDebounce<T extends (...args: unknown[]) => unknown>(func: T, wait: number): (...args: Parameters<T>) => void {
     let timeout: NodeJS.Timeout | null = null;
     return function(...args: Parameters<T>) {
         if (timeout) {
@@ -33,10 +33,6 @@ export default class ObsidoistPlugin extends Plugin {
 
 	private autoSyncIntervalId: number | null = null;
 
-
-    // Flag to ignore modify events triggered by internal sync
-    private isInternalSync = false;
-
 	async onload() {
 		await this.loadPluginData();
 		setDebugEnabled(this.settings.debugLogging ?? false);
@@ -51,6 +47,7 @@ export default class ObsidoistPlugin extends Plugin {
         // Usually creating the file is enough.
         
 		this.todoistService = new TodoistService(this.settings.todoistToken, this.localState, () => this.requestPersist?.());
+		this.todoistService.normalizeLineShadows();
 		this.todoistService.setUseSyncApi(this.settings.useSyncApi ?? true);
 		this.todoistService.updateCachePolicy({
 			completedRetentionDays: this.settings.completedRetentionDays,
@@ -74,57 +71,46 @@ export default class ObsidoistPlugin extends Plugin {
             this.codeBlockProcessor.process(source, el, ctx);
 		});
 
-        // Shared sync function
-        const performSync = async (file: TFile) => {
-             debug(`Debounced sync executing for ${file.path}. Internal sync flag: ${this.isInternalSync}`);
-             // Skip if we are currently internally syncing
-             if (this.isInternalSync) {
-                 debug('Skipping sync due to internal flag.');
-                 return;
-             }
+		const active = this.app.workspace.getActiveFile();
+		if (active) void this.syncManager.primeFileShadows(active);
 
-             await this.syncManager.scanAndSyncFile(file);
-             this.todoistService.triggerRefresh();
-        };
-
-        // Create a debounced version of the sync function
-        // We need a map of debounced functions per file path to avoid conflicts?
-        // Or just one global debounce?
-        // If user edits file A, then file B quickly.
-        // Global debounce is fine for single user.
-        // But if we switch files, we might sync the WRONG file if we capture `file` in closure?
-        // My previous code: `debounce(async (file) => ...)` passed file as arg.
-        // So the LATEST call's file wins.
-        const debouncedSync = customDebounce(performSync, 2000);
-
-        // 1. Listen to Editor Changes (Keystrokes)
-        // This resets the debounce timer on every key press.
-		this.registerEvent(this.app.workspace.on('editor-change', (editor: Editor, info: MarkdownView | MarkdownFileInfo) => {
-            if (this.isInternalSync) return;
-            
-            // Check if it's a TFile
-            if (info.file instanceof TFile && info.file.extension === 'md') {
-                // console.log(`[Obsidoist] Editor change detected: ${info.file.path}`);
-				debouncedSync(info.file);
+		this.registerEvent(this.app.workspace.on('file-open', (file) => {
+			if (file instanceof TFile && file.extension === 'md') {
+				void this.syncManager.primeFileShadows(file);
 			}
 		}));
 
-        // 2. Listen to Vault Modifications (External changes or Autosave)
-        // This catches changes not made via active editor (e.g. other plugins)
-        this.registerEvent(this.app.vault.on('modify', (file) => {
-            if (this.isInternalSync) return;
+        // Shared sync function
+        const performSync = async (file: TFile) => {
+             debug(`Debounced sync executing for ${file.path}.`);
+			await this.syncManager.syncFile(file);
+        };
 
+		const debouncedSyncByPath = new Map<string, () => void>();
+
+		const scheduleDebouncedSync = (file: TFile) => {
+			const path = file.path;
+			let debounced = debouncedSyncByPath.get(path);
+			if (!debounced) {
+				debounced = customDebounce(() => {
+					const f = this.app.vault.getAbstractFileByPath(path);
+					if (f instanceof TFile) void performSync(f);
+				}, 2000);
+				debouncedSyncByPath.set(path, debounced);
+			}
+			debounced();
+		};
+
+        // Listen to Vault Modifications (external changes or autosave/flush-to-disk)
+        // We intentionally trigger sync only after content has been written to the vault,
+        // to avoid reading stale content during editor-change windows.
+        this.registerEvent(this.app.vault.on('modify', (file) => {
             if (file instanceof TFile && file.extension === 'md') {
+				if (this.syncManager.isLikelyInternalModify(file)) return;
                 // console.log(`[Obsidoist] File modification detected: ${file.path}`);
-                debouncedSync(file);
+                scheduleDebouncedSync(file);
             }
         }));
-        
-        // Wrap SyncManager modification methods to manage isInternalSync flag
-        this.syncManager.setInternalSyncCallback((isSyncing) => {
-            debug(`Setting internal sync flag to: ${isSyncing}`);
-            this.isInternalSync = isSyncing;
-        });
 
         // Manual Sync Command (Sync Down)
         this.addCommand({
@@ -133,20 +119,15 @@ export default class ObsidoistPlugin extends Plugin {
             callback: async () => {
                 const file = this.app.workspace.getActiveFile();
                 if (file) {
-                    await this.todoistService.syncNow();
-                    await this.syncManager.syncDown(file);
-                    // Also scan up just in case
-                    await this.syncManager.scanAndSyncFile(file);
-                    
-                    // Trigger refresh of views after manual sync
-                    this.todoistService.triggerRefresh();
+					await this.syncManager.syncFile(file);
+					this.todoistService.triggerRefresh();
                 }
             }
         });
 
 	}
 
-	async onunload() {
+	onunload(): void {
 		if (this.autoSyncIntervalId !== null) {
 			window.clearInterval(this.autoSyncIntervalId);
 			this.autoSyncIntervalId = null;
@@ -163,25 +144,23 @@ export default class ObsidoistPlugin extends Plugin {
 		if (!Number.isFinite(seconds) || seconds <= 0) return;
 
 		this.autoSyncIntervalId = window.setInterval(() => {
-			void (async () => {
-				await this.todoistService.syncNow();
-				const file = this.app.workspace.getActiveFile();
-				if (file) await this.syncManager.syncDown(file);
-			})();
+			const file = this.app.workspace.getActiveFile();
+			if (file) void this.syncManager.syncFile(file);
 		}, seconds * 1000);
 	}
 
 	private async loadPluginData() {
         const raw = await this.loadData();
 
-        if (raw && typeof raw === 'object' && (raw as any).version === 2) {
-            const data = raw as any;
+        if (raw && typeof raw === 'object' && (raw as { version?: unknown }).version === 2) {
+            const data = raw as { version: 2; settings?: Partial<ObsidoistSettings>; local?: unknown };
             this.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings ?? {});
             this.localState = migrateLocalState(data.local);
             return;
         }
 
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
+        const settings = raw && typeof raw === 'object' ? (raw as Partial<ObsidoistSettings>) : {};
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
         this.localState = createDefaultLocalState();
     }
 

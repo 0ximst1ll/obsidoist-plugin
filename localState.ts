@@ -106,9 +106,12 @@ export function createLocalId(): TaskId {
 }
 
 export function createOperationId(): string {
-    const anyCrypto: any = (globalThis as any).crypto;
-    if (anyCrypto && typeof anyCrypto.randomUUID === 'function') {
-        return anyCrypto.randomUUID();
+    const cryptoValue: unknown = (globalThis as { crypto?: unknown }).crypto;
+    if (cryptoValue && typeof cryptoValue === 'object') {
+        const randomUUID = (cryptoValue as { randomUUID?: unknown }).randomUUID;
+        if (typeof randomUUID === 'function') {
+            return (randomUUID as (...args: unknown[]) => string).call(cryptoValue);
+        }
     }
 
     const bytes = new Uint8Array(16);
@@ -124,23 +127,28 @@ function isUuid(value: string): boolean {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-export function migrateLocalState(raw: any): ObsidoistLocalState {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+export function migrateLocalState(raw: unknown): ObsidoistLocalState {
     const base = createDefaultLocalState();
-    if (!raw || typeof raw !== 'object') return base;
+    if (!isRecord(raw)) return base;
 
-    const state: any = raw;
+    const state = raw;
     if (state.schemaVersion === 2) {
-		const s = state as ObsidoistLocalState;
-		if (!s.lineShadowById || typeof s.lineShadowById !== 'object') {
-			(s as any).lineShadowById = {};
-		}
-		return s;
-	}
+        const s = state as unknown as ObsidoistLocalState;
+        const shadow = (s as unknown as { lineShadowById?: unknown }).lineShadowById;
+        if (!isRecord(shadow)) {
+            (s as unknown as { lineShadowById: ObsidoistLocalState['lineShadowById'] }).lineShadowById = {};
+        }
+        return s;
+    }
 
-    const queueRaw: any[] = Array.isArray(state.queue) ? state.queue : [];
+    const queueRaw: unknown[] = Array.isArray(state.queue) ? state.queue : [];
     const queue: SyncOperation[] = queueRaw
         .map((op) => {
-            if (!op || typeof op !== 'object' || typeof op.type !== 'string') return null;
+            if (!isRecord(op) || typeof op.type !== 'string') return null;
             const opIdRaw = typeof op.opId === 'string' ? op.opId : '';
             const opId = isUuid(opIdRaw) ? opIdRaw : createOperationId();
             const attempts = Number.isFinite(op.attempts) ? op.attempts : 0;
@@ -150,8 +158,8 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
                 return {
                     type: 'create',
                     opId,
-                    localId: String(op.localId ?? op.id ?? ''),
-                    content: String(op.content ?? ''),
+                    localId: typeof op.localId === 'string' ? op.localId : (typeof op.id === 'string' ? op.id : ''),
+                    content: typeof op.content === 'string' ? op.content : '',
                     projectId: typeof op.projectId === 'string' ? op.projectId : undefined,
                     dueDate: typeof op.dueDate === 'string' ? op.dueDate : undefined,
                     isCompleted: typeof op.isCompleted === 'boolean' ? op.isCompleted : undefined,
@@ -166,8 +174,8 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
 				return {
 					type: 'move',
 					opId,
-					id: String(op.id ?? ''),
-					projectId: String(op.projectId ?? ''),
+					id: typeof op.id === 'string' ? op.id : '',
+					projectId: typeof op.projectId === 'string' ? op.projectId : '',
 					queuedAt,
 					attempts,
 					nextRetryAt: Number.isFinite(op.nextRetryAt) ? op.nextRetryAt : undefined,
@@ -179,8 +187,8 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
                 return {
                     type: 'update',
                     opId,
-                    id: String(op.id ?? ''),
-                    content: String(op.content ?? ''),
+                    id: typeof op.id === 'string' ? op.id : '',
+                    content: typeof op.content === 'string' ? op.content : '',
                     dueDate: typeof op.dueDate === 'string' ? op.dueDate : undefined,
                     queuedAt,
                     attempts,
@@ -193,7 +201,7 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
                 return {
                     type: op.type,
                     opId,
-                    id: String(op.id ?? ''),
+                    id: typeof op.id === 'string' ? op.id : '',
                     queuedAt,
                     attempts,
                     nextRetryAt: Number.isFinite(op.nextRetryAt) ? op.nextRetryAt : undefined,
@@ -207,17 +215,17 @@ export function migrateLocalState(raw: any): ObsidoistLocalState {
 
     const merged: ObsidoistLocalState = {
         schemaVersion: 2,
-        tasksById: (state.tasksById && typeof state.tasksById === 'object') ? state.tasksById : {},
-        projectsById: (state.projectsById && typeof state.projectsById === 'object') ? state.projectsById : {},
-        idAliasMap: (state.idAliasMap && typeof state.idAliasMap === 'object') ? state.idAliasMap : {},
-        filterResults: (state.filterResults && typeof state.filterResults === 'object') ? state.filterResults : {},
-        filterLastUsedAt: (state.filterLastUsedAt && typeof state.filterLastUsedAt === 'object') ? state.filterLastUsedAt : {},
+        tasksById: (isRecord(state.tasksById)) ? (state.tasksById as unknown as ObsidoistLocalState['tasksById']) : {},
+        projectsById: (isRecord(state.projectsById)) ? (state.projectsById as unknown as ObsidoistLocalState['projectsById']) : {},
+        idAliasMap: (isRecord(state.idAliasMap)) ? (state.idAliasMap as unknown as ObsidoistLocalState['idAliasMap']) : {},
+        filterResults: (isRecord(state.filterResults)) ? (state.filterResults as unknown as ObsidoistLocalState['filterResults']) : {},
+        filterLastUsedAt: (isRecord(state.filterLastUsedAt)) ? (state.filterLastUsedAt as unknown as ObsidoistLocalState['filterLastUsedAt']) : {},
         queue,
-        status: (state.status && typeof state.status === 'object') ? state.status : {},
-		lineShadowById: (state.lineShadowById && typeof state.lineShadowById === 'object') ? state.lineShadowById : {},
+        status: (isRecord(state.status)) ? (state.status as unknown as ObsidoistLocalState['status']) : {},
+		lineShadowById: (isRecord(state.lineShadowById)) ? (state.lineShadowById as unknown as ObsidoistLocalState['lineShadowById']) : {},
         syncToken: typeof state.syncToken === 'string' ? state.syncToken : undefined,
-        lastFullSyncAt: state.lastFullSyncAt,
-        lastProjectsSyncAt: state.lastProjectsSyncAt
+        lastFullSyncAt: typeof state.lastFullSyncAt === 'number' ? state.lastFullSyncAt : undefined,
+        lastProjectsSyncAt: typeof state.lastProjectsSyncAt === 'number' ? state.lastProjectsSyncAt : undefined
     };
 
     return merged;
