@@ -366,10 +366,6 @@ export class SyncManager {
 							debug(`syncDown skip due to unprocessed local edits for ${existingId}`);
 							continue;
 						}
-						if (shadowSig && this.sigEquals(shadowSig, localSig) && !this.sigEquals(shadowSig, remoteSig)) {
-							debug(`syncDown skip due to shadowSig divergence for ${existingId}`);
-							continue;
-						}
                             
                             let lineModified = false;
                         
