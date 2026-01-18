@@ -8735,9 +8735,8 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("General").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Basics").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your Todoist API token. You can find it in Todoist settings > Integrations.").addText((text) => text.setPlaceholder("Enter your token").setValue(this.plugin.settings.todoistToken).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Todoist").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your Todoist API token. You can find it in Todoist Settings \u2192 Integrations.").addText((text) => text.setPlaceholder("Enter your token").setValue(this.plugin.settings.todoistToken).onChange(async (value) => {
       this.plugin.settings.todoistToken = value;
       await this.plugin.saveSettings();
       this.display();
@@ -8810,12 +8809,12 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("Sync status").setDesc(
       `Queue: ${queueLength} | Tasks: ${cache.tasks} | Filters: ${cache.filters} | Last success: ${status.lastSuccessfulSyncAt ? new Date(status.lastSuccessfulSyncAt).toLocaleString() : "Never"}${status.lastErrorMessage ? ` | Last error: ${status.lastErrorMessage}` : ""}`
     );
-    new import_obsidian.Setting(containerEl).setName("Todoist sync API").setDesc("Test whether Todoist Sync API is reachable from your current Obsidian environment.").addButton((btn) => btn.setButtonText("Test").onClick(async () => {
+    new import_obsidian.Setting(containerEl).setName("Todoist sync API").setDesc("Test whether the Todoist sync API is reachable from your current Obsidian environment.").addButton((btn) => btn.setButtonText("Test").onClick(async () => {
       const result = await this.plugin.todoistService.testSyncApiConnectivity();
       new import_obsidian.Notice(result.message);
       this.display();
     }));
-    new import_obsidian.Setting(containerEl).setName("Use sync API").setDesc("Recommended for local-first clients. Uses Todoist Sync API for incremental sync.").addToggle((toggle) => {
+    new import_obsidian.Setting(containerEl).setName("Use sync API").setDesc("Recommended for local-first clients. Uses the Todoist sync API for incremental sync.").addToggle((toggle) => {
       var _a;
       return toggle.setValue((_a = this.plugin.settings.useSyncApi) != null ? _a : true).onChange(async (value) => {
         this.plugin.settings.useSyncApi = value;
@@ -8848,17 +8847,17 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
       });
       new import_obsidian.Notice("Obsidoist: filter cache pruned");
       this.display();
-    })).addButton((btn) => btn.setButtonText("Prune local id mappings").onClick(async () => {
+    })).addButton((btn) => btn.setButtonText("Prune local ID mappings").onClick(async () => {
       const ok = await confirmWithModal(
         this.app,
-        "Prune local id mappings",
-        "Prune local id mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults."
+        "Prune local ID mappings",
+        "Prune local ID mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults."
       );
       if (!ok)
         return;
       const aliasKeys = this.plugin.todoistService.getIdAliasMapKeys().filter((x) => x.startsWith("local-"));
       if (aliasKeys.length === 0) {
-        new import_obsidian.Notice("Obsidoist: no local id mappings to prune");
+        new import_obsidian.Notice("Obsidoist: no local ID mappings to prune");
         return;
       }
       new import_obsidian.Notice("Obsidoist: scanning vault for local ids\u2026");
@@ -9086,7 +9085,7 @@ var TodoistService = class extends import_obsidian2.Events {
     try {
       return JSON.stringify(value);
     } catch (e) {
-      return String(value);
+      return "[unserializable]";
     }
   }
   hasAnyPendingOps() {
@@ -10060,9 +10059,12 @@ var TodoistService = class extends import_obsidian2.Events {
   async refreshFromRemoteViaRest() {
     var _a, _b;
     const now = this.now();
+    const api = this.api;
+    if (!api)
+      return;
     let tasks;
     try {
-      tasks = await this.api.getTasks();
+      tasks = await api.getTasks();
     } catch (error) {
       console.error("Failed to get tasks from Todoist", error);
       return;
@@ -10118,9 +10120,12 @@ var TodoistService = class extends import_obsidian2.Events {
   }
   async refreshFilterIdsViaRest(filter, opts) {
     const now = this.now();
+    const api = this.api;
+    if (!api)
+      return;
     let tasks;
     try {
-      tasks = await this.api.getTasks({ filter });
+      tasks = await api.getTasks({ filter });
     } catch (error) {
       console.error("Failed to get tasks from Todoist", error);
       return;

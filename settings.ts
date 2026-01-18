@@ -70,12 +70,11 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		new Setting(containerEl).setName('General').setHeading();
-		new Setting(containerEl).setName('Basics').setHeading();
+		new Setting(containerEl).setName('Todoist').setHeading();
 
 		new Setting(containerEl)
 			.setName('Todoist API token')
-			.setDesc('Your Todoist API token. You can find it in Todoist settings > Integrations.')
+			.setDesc('Your Todoist API token. You can find it in Todoist Settings → Integrations.')
 			.addText(text => text
 				.setPlaceholder('Enter your token')
 				.setValue(this.plugin.settings.todoistToken)
@@ -184,7 +183,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Todoist sync API')
-			.setDesc('Test whether Todoist Sync API is reachable from your current Obsidian environment.')
+			.setDesc('Test whether the Todoist sync API is reachable from your current Obsidian environment.')
 			.addButton(btn => btn
 				.setButtonText('Test')
 				.onClick(async () => {
@@ -195,7 +194,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Use sync API')
-			.setDesc('Recommended for local-first clients. Uses Todoist Sync API for incremental sync.')
+			.setDesc('Recommended for local-first clients. Uses the Todoist sync API for incremental sync.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.useSyncApi ?? true)
 				.onChange(async (value) => {
@@ -245,18 +244,18 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 					this.display();
 				}))
 			.addButton(btn => btn
-				.setButtonText('Prune local id mappings')
+				.setButtonText('Prune local ID mappings')
 				.onClick(async () => {
 					const ok = await confirmWithModal(
 						this.app,
-						'Prune local id mappings',
-						'Prune local id mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults.'
+						'Prune local ID mappings',
+						'Prune local ID mappings (local-...) that are no longer referenced in your vault?\n\nThis scans markdown files and may take a while on large vaults.'
 					);
 					if (!ok) return;
 
 					const aliasKeys = this.plugin.todoistService.getIdAliasMapKeys().filter(x => x.startsWith('local-'));
 					if (aliasKeys.length === 0) {
-						new Notice('Obsidoist: no local id mappings to prune');
+						new Notice('Obsidoist: no local ID mappings to prune');
 						return;
 					}
 

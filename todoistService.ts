@@ -38,7 +38,7 @@ export class TodoistService extends Events {
 		try {
 			return JSON.stringify(value);
 		} catch {
-			return String(value);
+			return '[unserializable]';
 		}
 	}
 	hasAnyPendingOps(): boolean {
@@ -1088,9 +1088,11 @@ export class TodoistService extends Events {
 
     private async refreshFromRemoteViaRest() {
         const now = this.now();
+		const api = this.api;
+		if (!api) return;
         let tasks: Task[];
         try {
-            tasks = await this.api!.getTasks();
+            tasks = await api.getTasks();
         } catch (error) {
             console.error('Failed to get tasks from Todoist', error);
             return;
@@ -1148,9 +1150,11 @@ export class TodoistService extends Events {
 
     private async refreshFilterIdsViaRest(filter: string, opts?: { triggerRefresh?: boolean }) {
         const now = this.now();
+		const api = this.api;
+		if (!api) return;
         let tasks: Task[];
         try {
-            tasks = await this.api!.getTasks({ filter });
+            tasks = await api.getTasks({ filter });
         } catch (error) {
             console.error('Failed to get tasks from Todoist', error);
             return;
