@@ -32,6 +32,15 @@ export class TodoistService extends Events {
     private syncInFlight: Promise<void> | null = null;
     private pendingFilterSync: string | null = null;
 	private notifiedOpIds = new Set<string>();
+	private toText(value: unknown): string {
+		if (typeof value === 'string') return value;
+		if (typeof value === 'number' || typeof value === 'boolean' || value === null || value === undefined) return String(value);
+		try {
+			return JSON.stringify(value);
+		} catch {
+			return String(value);
+		}
+	}
 	hasAnyPendingOps(): boolean {
 		return this.localState.queue.length > 0;
 	}
@@ -204,7 +213,7 @@ export class TodoistService extends Events {
     }
 
 	getIdAliasMapKeys(): TaskId[] {
-		return Object.keys(this.localState.idAliasMap ?? {}) as TaskId[];
+		return Object.keys(this.localState.idAliasMap ?? {});
 	}
 
 	getLocalIdsReferencedInState(): Set<TaskId> {
@@ -217,7 +226,7 @@ export class TodoistService extends Events {
 		for (const ids of Object.values(this.localState.filterResults ?? {})) {
 			for (const id of ids) referenced.add(this.resolveId(id));
 		}
-		for (const id of Object.keys(this.localState.lineShadowById ?? {})) referenced.add(id as TaskId);
+		for (const id of Object.keys(this.localState.lineShadowById ?? {})) referenced.add(id);
 		return referenced;
 	}
 
@@ -608,7 +617,7 @@ export class TodoistService extends Events {
 
     async syncNow(): Promise<void> {
         if (!this.api) return;
-        if (this.syncInFlight) return this.syncInFlight;
+        if (this.syncInFlight !== null) return this.syncInFlight;
         this.isSyncRunning = true;
 
         this.syncInFlight = (async () => {
@@ -658,7 +667,7 @@ export class TodoistService extends Events {
             return this.syncNow();
         }
         if (!this.api) return;
-        if (this.syncInFlight) {
+        if (this.syncInFlight !== null) {
             this.pendingFilterSync = normalized;
             return this.syncInFlight;
         }
@@ -839,14 +848,17 @@ export class TodoistService extends Events {
     }
 
     private extractProjectIdFromTask(task: Task): string | undefined {
-        const candidate = (task as unknown as { projectId?: unknown; project_id?: unknown }).projectId ?? (task as unknown as { project_id?: unknown }).project_id;
+        const t: unknown = task;
+        if (!this.isRecord(t)) return undefined;
+        const candidate = t.projectId ?? t.project_id;
         if (typeof candidate === 'string' || typeof candidate === 'number') return String(candidate);
         return undefined;
     }
 
     private extractDueFromTask(task: Task): { dueDate?: string; isRecurring?: boolean } {
-        const due = (task as unknown as { due?: unknown }).due;
-        return this.extractDueFromUnknown(due);
+        const t: unknown = task;
+        if (!this.isRecord(t)) return {};
+        return this.extractDueFromUnknown(t.due);
     }
 
     private applySyncApiTempIdMapping(tempIdMapping: Record<string, string> | undefined) {
@@ -1031,9 +1043,9 @@ export class TodoistService extends Events {
             }
 
             op.attempts += 1;
-            const msg = this.isRecord(status) && status.error !== undefined ? String(status.error) : 'Sync API command failed.';
+            const msg = this.isRecord(status) && status.error !== undefined ? this.toText(status.error) : 'Sync API command failed.';
 			debug('syncApi:op:error', { type: op.type, opId: op.opId, msg });
-            const statusDetails = this.isRecord(status) ? JSON.stringify(status) : String(status);
+            const statusDetails = this.toText(status);
             const cmd = cmdByUuid[op.opId];
             const cmdDetails = cmd ? JSON.stringify({ type: cmd.type, args: cmd.args }) : '';
             op.lastError = `${msg}${statusDetails ? ` details=${statusDetails}` : ''}${cmdDetails ? ` cmd=${cmdDetails}` : ''}`;

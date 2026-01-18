@@ -8735,8 +8735,8 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("Obsidoist settings").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Basic").setHeading();
+    new import_obsidian.Setting(containerEl).setName("General").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Basics").setHeading();
     new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your Todoist API token. You can find it in Todoist settings > Integrations.").addText((text) => text.setPlaceholder("Enter your token").setValue(this.plugin.settings.todoistToken).onChange(async (value) => {
       this.plugin.settings.todoistToken = value;
       await this.plugin.saveSettings();
@@ -8772,7 +8772,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
       await this.plugin.saveSettings();
     }));
     new import_obsidian.Setting(containerEl).setName("Sync").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Code block auto refresh (seconds)").setDesc("How often Obsidoist code blocks refresh themselves. Set 0 to disable.").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("Code block auto refresh (seconds)").setDesc("How often code blocks refresh themselves. Set 0 to disable.").addText((text) => {
       var _a;
       return text.setPlaceholder("60").setValue(String((_a = this.plugin.settings.codeblockAutoRefreshSeconds) != null ? _a : 60)).onChange(async (value) => {
         const parsed = Number.parseInt(value.trim() || "0", 10);
@@ -8810,12 +8810,12 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("Sync status").setDesc(
       `Queue: ${queueLength} | Tasks: ${cache.tasks} | Filters: ${cache.filters} | Last success: ${status.lastSuccessfulSyncAt ? new Date(status.lastSuccessfulSyncAt).toLocaleString() : "Never"}${status.lastErrorMessage ? ` | Last error: ${status.lastErrorMessage}` : ""}`
     );
-    new import_obsidian.Setting(containerEl).setName("Todoist Sync API").setDesc("Test whether Todoist Sync API is reachable from your current Obsidian environment.").addButton((btn) => btn.setButtonText("Test").onClick(async () => {
+    new import_obsidian.Setting(containerEl).setName("Todoist sync API").setDesc("Test whether Todoist Sync API is reachable from your current Obsidian environment.").addButton((btn) => btn.setButtonText("Test").onClick(async () => {
       const result = await this.plugin.todoistService.testSyncApiConnectivity();
       new import_obsidian.Notice(result.message);
       this.display();
     }));
-    new import_obsidian.Setting(containerEl).setName("Use Sync API").setDesc("Recommended for local-first clients. Uses Todoist Sync API for incremental sync.").addToggle((toggle) => {
+    new import_obsidian.Setting(containerEl).setName("Use sync API").setDesc("Recommended for local-first clients. Uses Todoist Sync API for incremental sync.").addToggle((toggle) => {
       var _a;
       return toggle.setValue((_a = this.plugin.settings.useSyncApi) != null ? _a : true).onChange(async (value) => {
         this.plugin.settings.useSyncApi = value;
@@ -9076,6 +9076,17 @@ var TodoistService = class extends import_obsidian2.Events {
     this.token = token != null ? token : "";
     if (token) {
       this.api = new import_todoist_api_typescript.TodoistApi(token);
+    }
+  }
+  toText(value) {
+    if (typeof value === "string")
+      return value;
+    if (typeof value === "number" || typeof value === "boolean" || value === null || value === void 0)
+      return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch (e) {
+      return String(value);
     }
   }
   hasAnyPendingOps() {
@@ -9600,7 +9611,7 @@ var TodoistService = class extends import_obsidian2.Events {
   async syncNow() {
     if (!this.api)
       return;
-    if (this.syncInFlight)
+    if (this.syncInFlight !== null)
       return this.syncInFlight;
     this.isSyncRunning = true;
     this.syncInFlight = (async () => {
@@ -9646,7 +9657,7 @@ var TodoistService = class extends import_obsidian2.Events {
     }
     if (!this.api)
       return;
-    if (this.syncInFlight) {
+    if (this.syncInFlight !== null) {
       this.pendingFilterSync = normalized;
       return this.syncInFlight;
     }
@@ -9812,14 +9823,19 @@ var TodoistService = class extends import_obsidian2.Events {
   }
   extractProjectIdFromTask(task) {
     var _a;
-    const candidate = (_a = task.projectId) != null ? _a : task.project_id;
+    const t = task;
+    if (!this.isRecord(t))
+      return void 0;
+    const candidate = (_a = t.projectId) != null ? _a : t.project_id;
     if (typeof candidate === "string" || typeof candidate === "number")
       return String(candidate);
     return void 0;
   }
   extractDueFromTask(task) {
-    const due = task.due;
-    return this.extractDueFromUnknown(due);
+    const t = task;
+    if (!this.isRecord(t))
+      return {};
+    return this.extractDueFromUnknown(t.due);
   }
   applySyncApiTempIdMapping(tempIdMapping) {
     if (!tempIdMapping)
@@ -9998,9 +10014,9 @@ var TodoistService = class extends import_obsidian2.Events {
         continue;
       }
       op.attempts += 1;
-      const msg = this.isRecord(status) && status.error !== void 0 ? String(status.error) : "Sync API command failed.";
+      const msg = this.isRecord(status) && status.error !== void 0 ? this.toText(status.error) : "Sync API command failed.";
       debug("syncApi:op:error", { type: op.type, opId: op.opId, msg });
-      const statusDetails = this.isRecord(status) ? JSON.stringify(status) : String(status);
+      const statusDetails = this.toText(status);
       const cmd = cmdByUuid[op.opId];
       const cmdDetails = cmd ? JSON.stringify({ type: cmd.type, args: cmd.args }) : "";
       op.lastError = `${msg}${statusDetails ? ` details=${statusDetails}` : ""}${cmdDetails ? ` cmd=${cmdDetails}` : ""}`;
@@ -10427,12 +10443,6 @@ var SyncManager = class {
             const remoteContent = cachedTask.content;
             const localDueDate = this.extractDueDate(line);
             const remoteDueDate = cachedTask.dueDate;
-            const remoteSig = {
-              content: remoteContent,
-              isCompleted: cachedTask.isCompleted,
-              projectId: cachedTask.projectId,
-              dueDate: remoteDueDate
-            };
             let localProjectId = void 0;
             for (const project of this.projects) {
               const normalizedProjectName = project.name.replace(/\s+/g, "");

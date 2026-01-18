@@ -337,13 +337,6 @@ export class SyncManager {
 						const localDueDate = this.extractDueDate(line);
 						const remoteDueDate = cachedTask.dueDate;
 
-						const remoteSig = {
-							content: remoteContent,
-							isCompleted: cachedTask.isCompleted,
-							projectId: cachedTask.projectId,
-							dueDate: remoteDueDate
-						};
-
 						let localProjectId: string | undefined = undefined;
 						for (const project of this.projects) {
 							const normalizedProjectName = project.name.replace(/\s+/g, '');

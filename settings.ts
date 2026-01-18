@@ -70,8 +70,8 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		new Setting(containerEl).setName('Obsidoist settings').setHeading();
-		new Setting(containerEl).setName('Basic').setHeading();
+		new Setting(containerEl).setName('General').setHeading();
+		new Setting(containerEl).setName('Basics').setHeading();
 
 		new Setting(containerEl)
 			.setName('Todoist API token')
@@ -131,7 +131,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Code block auto refresh (seconds)')
-			.setDesc('How often Obsidoist code blocks refresh themselves. Set 0 to disable.')
+			.setDesc('How often code blocks refresh themselves. Set 0 to disable.')
 			.addText(text => text
 				.setPlaceholder('60')
 				.setValue(String(this.plugin.settings.codeblockAutoRefreshSeconds ?? 60))
@@ -183,7 +183,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Todoist Sync API')
+			.setName('Todoist sync API')
 			.setDesc('Test whether Todoist Sync API is reachable from your current Obsidian environment.')
 			.addButton(btn => btn
 				.setButtonText('Test')
@@ -194,7 +194,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Use Sync API')
+			.setName('Use sync API')
 			.setDesc('Recommended for local-first clients. Uses Todoist Sync API for incremental sync.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.useSyncApi ?? true)
