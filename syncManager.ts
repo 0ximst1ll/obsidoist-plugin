@@ -1,7 +1,7 @@
 import { App, TFile, Notice } from 'obsidian';
 import { TodoistService } from './todoistService';
 import { ObsidoistSettings } from './settings';
-import { Project } from '@doist/todoist-api-typescript';
+import type { TodoistProject } from './todoistTypes';
 import { debug } from './logger';
 
 export class SyncManager {
@@ -19,7 +19,7 @@ export class SyncManager {
     }
     
     // Cache for projects
-    private projects: Project[] = [];
+    private projects: TodoistProject[] = [];
     private lastProjectFetch = 0;
 
     // Regex to match tasks with the sync tag (strict) - used for legacy clean parsing if needed
@@ -27,7 +27,7 @@ export class SyncManager {
     private get regex() {
         // Escaping the tag for regex
         const tag = this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return new RegExp(`^\\s*-\\s\\[(.)\\]\\s+(.*?)(\\s${tag})(?:\\s\\[todoist_id:(\\d+)\\])?\\s*$`);
+        return new RegExp(`^\\s*-\\s\\[(.)\\]\\s+(.*?)(\\s${tag})(?:\\s\\[todoist_id:([\\w-]+)\\])?\\s*$`);
     }
 
     // Flexible regex for detecting ID only

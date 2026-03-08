@@ -1,4 +1,4 @@
-import { TodoistApi, Task, Project } from '@doist/todoist-api-typescript';
+import type { TodoistProject, TodoistTask } from './todoistTypes';
 import { Events, Notice, requestUrl } from 'obsidian';
 import { createLocalId, createOperationId, LocalProjectRecord, LocalTaskRecord, ObsidoistLocalState, SyncOperation, TaskId } from './localState';
 import { debug } from './logger';
@@ -7,7 +7,7 @@ type SyncApiResponse = {
     sync_token?: unknown;
     projects?: unknown[];
     items?: unknown[];
-    temp_id_mapping?: Record<string, string>;
+    temp_id_mapping?: Record<string, unknown>;
     sync_status?: unknown;
 };
 
@@ -19,8 +19,6 @@ type SyncApiCommand = {
 };
 
 export class TodoistService extends Events {
-    private api: TodoistApi | null = null;
-
     private token: string = '';
 
     private useSyncApi = true;
@@ -86,18 +84,10 @@ export class TodoistService extends Events {
         this.localState = localState;
         this.requestPersist = requestPersist;
         this.token = token ?? '';
-        if (token) {
-            this.api = new TodoistApi(token);
-        }
     }
 
     updateToken(token: string) {
         this.token = token ?? '';
-        if (token) {
-            this.api = new TodoistApi(token);
-        } else {
-            this.api = null;
-        }
     }
 
     setUseSyncApi(enabled: boolean) {
@@ -106,7 +96,7 @@ export class TodoistService extends Events {
 
     async testSyncApiConnectivity(): Promise<{ ok: boolean; status?: number; message: string; details?: unknown }>{
         const token = (this.token ?? '').trim();
-        const url = 'https://api.todoist.com/sync/v9/sync';
+        const url = 'https://api.todoist.com/api/v1/sync';
         if (!token) {
             const msg = 'Todoist API Token is empty.';
             this.localState.status.lastSyncApiTestAt = this.now();
@@ -459,12 +449,12 @@ export class TodoistService extends Events {
         this.requestPersist();
     }
 
-    async getProjects(): Promise<Project[]> {
+    async getProjects(): Promise<TodoistProject[]> {
         const cached = Object.values(this.localState.projectsById)
             .sort((a, b) => a.name.localeCompare(b.name))
-            .map(p => ({ id: p.id, name: p.name }) as unknown as Project);
+            .map(p => ({ id: p.id, name: p.name }) as unknown as TodoistProject);
 
-        if (!this.api) return cached;
+        if (!this.token?.trim()) return cached;
 
         const tooOld = !this.localState.lastProjectsSyncAt || (this.now() - this.localState.lastProjectsSyncAt) > 300000;
         if (cached.length > 0 && !tooOld) return cached;
@@ -473,14 +463,14 @@ export class TodoistService extends Events {
 			await this.refreshProjectsViaSyncApi();
 			const refreshed = Object.values(this.localState.projectsById)
 				.sort((a, b) => a.name.localeCompare(b.name))
-				.map(p => ({ id: p.id, name: p.name }) as unknown as Project);
+				.map(p => ({ id: p.id, name: p.name }) as unknown as TodoistProject);
 			return refreshed;
 		} catch (error) {
 			console.error("Failed to get projects via Sync API, falling back to REST", error);
 		}
 
 		try {
-			const projects = await this.api.getProjects();
+			const projects = await this.getProjectsViaApiV1();
 			const updatedAt = this.now();
 			for (const project of projects) {
 				const rec: LocalProjectRecord = { id: project.id, name: project.name, updatedAt };
@@ -495,16 +485,185 @@ export class TodoistService extends Events {
 		}
     }
 
-    getTasks(filter?: string): Promise<Task[]> {
+	private getAuthHeader(): Record<string, string> {
+		const token = (this.token ?? '').trim();
+		return token ? { Authorization: `Bearer ${token}` } : {};
+	}
+
+	private resolveProjectId(projectId: string | undefined): string | undefined {
+		const raw = (projectId ?? '').trim();
+		if (!raw) return undefined;
+		if (!/^\d+$/.test(raw)) return raw;
+		const rec = this.localState.projectsById[raw];
+		if (!rec?.name) return raw;
+		for (const p of Object.values(this.localState.projectsById)) {
+			if (!p?.id || !p?.name) continue;
+			if (p.name !== rec.name) continue;
+			if (p.id === raw) continue;
+			if (/^\d+$/.test(p.id)) continue;
+			return p.id;
+		}
+		return raw;
+	}
+
+	private async getProjectsViaApiV1(): Promise<TodoistProject[]> {
+		const res = await requestUrl({
+			url: 'https://api.todoist.com/api/v1/projects',
+			method: 'GET',
+			headers: this.getAuthHeader()
+		});
+		if (res.status < 200 || res.status >= 300) {
+			throw new Error(`API v1 projects failed (HTTP ${res.status}) ${res.text ?? ''}`);
+		}
+		const json: unknown = res.json ?? (res.text ? JSON.parse(res.text) : []);
+		if (!Array.isArray(json)) return [];
+		const out: TodoistProject[] = [];
+		for (const p of json) {
+			if (!this.isRecord(p)) continue;
+			const id = typeof p.id === 'string' || typeof p.id === 'number' ? String(p.id) : '';
+			const name = typeof p.name === 'string' ? p.name : '';
+			if (!id || !name) continue;
+			out.push({ id, name });
+		}
+		return out;
+	}
+
+	private async getTasksViaApiV1(): Promise<TodoistTask[]> {
+		const url = new URL('https://api.todoist.com/api/v1/tasks');
+		const res = await requestUrl({
+			url: url.toString(),
+			method: 'GET',
+			headers: this.getAuthHeader()
+		});
+		if (res.status < 200 || res.status >= 300) {
+			throw new Error(`API v1 tasks failed (HTTP ${res.status}) ${res.text ?? ''}`);
+		}
+		const json: unknown = res.json ?? (res.text ? JSON.parse(res.text) : []);
+		if (!Array.isArray(json)) return [];
+		const out: TodoistTask[] = [];
+		for (const t of json) {
+			if (!this.isRecord(t)) continue;
+			const id = typeof t.id === 'string' || typeof t.id === 'number' ? String(t.id) : '';
+			const content = typeof t.content === 'string' ? t.content : '';
+			if (!id) continue;
+			out.push({
+				id,
+				content,
+				isCompleted: (t.is_completed === true || t.isCompleted === true),
+				projectId: (typeof (t.project_id ?? t.projectId) === 'string' || typeof (t.project_id ?? t.projectId) === 'number') ? String(t.project_id ?? t.projectId) : undefined,
+				due: (this.isRecord(t.due) || t.due === null) ? (t.due as unknown as TodoistTask['due']) : undefined
+			});
+		}
+		return out;
+	}
+
+	private async getTasksByFilterViaApiV1(query: string): Promise<TodoistTask[]> {
+		const normalized = (query ?? '').trim();
+		if (!normalized) return this.getTasksViaApiV1();
+
+		const tryFetch = async (paramName: 'query' | 'filter'): Promise<TodoistTask[]> => {
+			const url = new URL('https://api.todoist.com/api/v1/tasks/filter');
+			url.searchParams.set(paramName, normalized);
+			const res = await requestUrl({
+				url: url.toString(),
+				method: 'GET',
+				headers: this.getAuthHeader()
+			});
+			if (res.status < 200 || res.status >= 300) {
+				throw new Error(`API v1 tasks/filter failed (HTTP ${res.status}) ${res.text ?? ''}`);
+			}
+			const json: unknown = res.json ?? (res.text ? JSON.parse(res.text) : []);
+			const list = this.extractTasksListFromUnknown(json);
+			return this.mapUnknownTasksToTodoistTasks(list);
+		};
+
+		let tasks: TodoistTask[] = [];
+		try {
+			tasks = await tryFetch('query');
+		} catch (e) {
+			tasks = [];
+		}
+		if (tasks.length === 0) {
+			try {
+				tasks = await tryFetch('filter');
+			} catch {
+				tasks = [];
+			}
+		}
+		if (tasks.length > 0) return tasks;
+
+		const local = this.tryFilterTasksLocally(normalized);
+		return local;
+	}
+
+	private extractTasksListFromUnknown(json: unknown): unknown[] {
+		if (Array.isArray(json)) return json;
+		if (!this.isRecord(json)) return [];
+		if (Array.isArray(json.tasks)) return json.tasks as unknown[];
+		if (Array.isArray(json.items)) return json.items as unknown[];
+		if (Array.isArray(json.results)) return json.results as unknown[];
+		return [];
+	}
+
+	private mapUnknownTasksToTodoistTasks(list: unknown[]): TodoistTask[] {
+		const out: TodoistTask[] = [];
+		for (const t of list) {
+			if (!this.isRecord(t)) continue;
+			const candidate = this.isRecord(t.task) ? (t.task as Record<string, unknown>) : t;
+			const id = typeof candidate.id === 'string' || typeof candidate.id === 'number' ? String(candidate.id) : '';
+			const content = typeof candidate.content === 'string' ? candidate.content : '';
+			if (!id) continue;
+			out.push({
+				id,
+				content,
+				isCompleted: (candidate.is_completed === true || candidate.isCompleted === true),
+				projectId:
+					(typeof (candidate.project_id ?? candidate.projectId) === 'string' || typeof (candidate.project_id ?? candidate.projectId) === 'number')
+						? String(candidate.project_id ?? candidate.projectId)
+						: undefined,
+				due: (this.isRecord(candidate.due) || candidate.due === null) ? (candidate.due as unknown as TodoistTask['due']) : undefined
+			});
+		}
+		return out;
+	}
+
+	private tryFilterTasksLocally(normalizedFilter: string): TodoistTask[] {
+		const trimmed = (normalizedFilter ?? '').trim();
+		if (!trimmed.startsWith('#')) return [];
+
+		const projectName = trimmed.slice(1).trim();
+		if (!projectName) return [];
+
+		const matchedProjectIds = new Set<string>();
+		for (const p of Object.values(this.localState.projectsById)) {
+			if (!p?.id || !p?.name) continue;
+			if (p.name.localeCompare(projectName, undefined, { sensitivity: 'accent' }) === 0) {
+				matchedProjectIds.add(p.id);
+				continue;
+			}
+			if (p.name.toLowerCase() === projectName.toLowerCase()) {
+				matchedProjectIds.add(p.id);
+			}
+		}
+		if (matchedProjectIds.size === 0) return [];
+
+		const now = this.now();
+		return Object.values(this.localState.tasksById)
+			.filter((t) => !t.isCompleted && Boolean(t.projectId) && matchedProjectIds.has(String(t.projectId)))
+			.sort((a, b) => (b.updatedAt ?? now) - (a.updatedAt ?? now))
+			.map((t) => ({ id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId } as unknown as TodoistTask));
+	}
+
+    getTasks(filter?: string): Promise<TodoistTask[]> {
         const now = this.now();
         const tasksById = this.localState.tasksById;
 
         const fromIds = (ids: TaskId[]) => {
-            const result: Task[] = [];
+            const result: TodoistTask[] = [];
             for (const id of ids) {
                 const canonical = this.resolveId(id);
                 const t = tasksById[canonical];
-                if (t) result.push({ id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId } as unknown as Task);
+                if (t) result.push({ id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId } as unknown as TodoistTask);
             }
             return result;
         };
@@ -515,7 +674,10 @@ export class TodoistService extends Events {
             this.localState.filterLastUsedAt[normalizedFilter] = now;
             this.requestPersist();
             const ids = this.localState.filterResults[normalizedFilter];
-            if (ids) return Promise.resolve(fromIds(ids));
+			if (ids && ids.length > 0) return Promise.resolve(fromIds(ids));
+
+			const localFallback = this.tryFilterTasksLocally(normalizedFilter);
+			if (localFallback.length > 0) return Promise.resolve(localFallback);
 
             return Promise.resolve([]);
         }
@@ -523,12 +685,12 @@ export class TodoistService extends Events {
         const cachedActive = Object.values(tasksById)
             .filter(t => !t.isCompleted)
             .sort((a, b) => (b.updatedAt ?? now) - (a.updatedAt ?? now))
-            .map(t => ({ id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId } as unknown as Task));
+            .map(t => ({ id: t.id, content: t.content, isCompleted: t.isCompleted, projectId: t.projectId } as unknown as TodoistTask));
 
         return Promise.resolve(cachedActive);
     }
 
-    createTask(content: string, projectId?: string, dueDate?: string): Promise<Task | null> {
+    createTask(content: string, projectId?: string, dueDate?: string): Promise<TodoistTask | null> {
         const localId = createLocalId();
         const now = this.now();
 		debug('enqueue:create', { localId, projectId: projectId || undefined });
@@ -547,7 +709,7 @@ export class TodoistService extends Events {
         this.enqueue({ type: 'create', opId: createOperationId(), localId, content, projectId, dueDate, queuedAt: now, attempts: 0 });
         this.requestPersist();
         this.triggerRefresh();
-        return Promise.resolve({ id: localId, content, isCompleted: false, projectId } as unknown as Task);
+        return Promise.resolve({ id: localId, content, isCompleted: false, projectId } as unknown as TodoistTask);
     }
 
     closeTask(id: string): Promise<boolean> {
@@ -616,7 +778,7 @@ export class TodoistService extends Events {
     }
 
     async syncNow(): Promise<void> {
-        if (!this.api) return;
+        if (!this.token?.trim()) return;
         if (this.syncInFlight !== null) return this.syncInFlight;
         this.isSyncRunning = true;
 
@@ -666,7 +828,7 @@ export class TodoistService extends Events {
         if (!normalized) {
             return this.syncNow();
         }
-        if (!this.api) return;
+        if (!this.token?.trim()) return;
         if (this.syncInFlight !== null) {
             this.pendingFilterSync = normalized;
             return this.syncInFlight;
@@ -719,7 +881,7 @@ export class TodoistService extends Events {
         const token = (this.token ?? '').trim();
         if (!token) throw new Error('Todoist API Token is empty.');
 
-        const url = 'https://api.todoist.com/sync/v9/sync';
+        const url = 'https://api.todoist.com/api/v1/sync';
         const body = new URLSearchParams({
             sync_token: params.syncToken,
             resource_types: JSON.stringify(params.resourceTypes)
@@ -847,7 +1009,7 @@ export class TodoistService extends Events {
         return { dueDate, isRecurring };
     }
 
-    private extractProjectIdFromTask(task: Task): string | undefined {
+    private extractProjectIdFromTask(task: TodoistTask): string | undefined {
         const t: unknown = task;
         if (!this.isRecord(t)) return undefined;
         const candidate = t.projectId ?? t.project_id;
@@ -855,31 +1017,42 @@ export class TodoistService extends Events {
         return undefined;
     }
 
-    private extractDueFromTask(task: Task): { dueDate?: string; isRecurring?: boolean } {
+    private extractDueFromTask(task: TodoistTask): { dueDate?: string; isRecurring?: boolean } {
         const t: unknown = task;
         if (!this.isRecord(t)) return {};
         return this.extractDueFromUnknown(t.due);
     }
 
-    private applySyncApiTempIdMapping(tempIdMapping: Record<string, string> | undefined) {
+    private applySyncApiTempIdMapping(tempIdMapping: Record<string, unknown> | undefined) {
         if (!tempIdMapping) return;
         let didChange = false;
         for (const [tempId, newId] of Object.entries(tempIdMapping)) {
-            const localId = tempId;
-            this.localState.idAliasMap[localId] = newId;
+            const resolvedNewId = typeof newId === 'string' || typeof newId === 'number' ? String(newId) : '';
+            if (!resolvedNewId) continue;
+
+            let localId: string | null = null;
+            if (tempId.startsWith('local-')) {
+                localId = tempId;
+            } else {
+                const op = this.localState.queue.find((x) => x.type === 'create' && x.opId === tempId);
+                if (op && op.type === 'create') localId = op.localId;
+            }
+            if (!localId) continue;
+
+            this.localState.idAliasMap[localId] = resolvedNewId;
             didChange = true;
 
-			this.moveLineShadow(localId, newId);
+			this.moveLineShadow(localId, resolvedNewId);
 
             const existing = this.localState.tasksById[localId];
-            if (existing && !this.localState.tasksById[newId]) {
+            if (existing && !this.localState.tasksById[resolvedNewId]) {
                 delete this.localState.tasksById[localId];
-                existing.id = newId;
-                this.localState.tasksById[newId] = existing;
+                existing.id = resolvedNewId;
+                this.localState.tasksById[resolvedNewId] = existing;
             }
 
             for (const [filter, ids] of Object.entries(this.localState.filterResults)) {
-                this.localState.filterResults[filter] = ids.map(x => (x === localId ? newId : x));
+                this.localState.filterResults[filter] = ids.map(x => (x === localId ? resolvedNewId : x));
             }
         }
 
@@ -946,9 +1119,10 @@ export class TodoistService extends Events {
 
             if (op.type === 'create') {
                 const args: Record<string, unknown> = { content: op.content };
-                if (op.projectId) args.project_id = op.projectId;
+                const pid = this.resolveProjectId(op.projectId);
+                if (pid) args.project_id = pid;
                 if (op.dueDate) args.due = { date: op.dueDate };
-                commands.push({ type: 'item_add', temp_id: op.localId, uuid: op.opId, args });
+                commands.push({ type: 'item_add', temp_id: op.opId, uuid: op.opId, args });
                 if (op.isCompleted) createdToComplete.push({ localId: op.localId });
             } else if (op.type === 'update') {
                 const id = this.resolveId(op.id);
@@ -959,8 +1133,9 @@ export class TodoistService extends Events {
 			} else if (op.type === 'move') {
 				const id = this.resolveId(op.id);
 				if (id.startsWith('local-') && !this.localState.idAliasMap[id]) continue;
-				if (op.projectId) {
-					commands.push({ type: 'item_move', uuid: op.opId, args: { id, project_id: op.projectId } });
+				const pid = this.resolveProjectId(op.projectId);
+				if (pid) {
+					commands.push({ type: 'item_move', uuid: op.opId, args: { id, project_id: pid } });
 				}
             } else if (op.type === 'close') {
                 const id = this.resolveId(op.id);
@@ -1088,11 +1263,10 @@ export class TodoistService extends Events {
 
     private async refreshFromRemoteViaRest() {
         const now = this.now();
-		const api = this.api;
-		if (!api) return;
-        let tasks: Task[];
+		if (!this.token?.trim()) return;
+	    let tasks: TodoistTask[];
         try {
-            tasks = await api.getTasks();
+			tasks = await this.getTasksViaApiV1();
         } catch (error) {
             console.error('Failed to get tasks from Todoist', error);
             return;
@@ -1109,7 +1283,7 @@ export class TodoistService extends Events {
                 this.localState.tasksById[task.id] = {
                     id: task.id,
                     content: task.content,
-                    isCompleted: task.isCompleted ?? false,
+					isCompleted: (task.isCompleted ?? task.is_completed) ?? false,
                     projectId: this.extractProjectIdFromTask(task),
                     dueDate: due.dueDate,
                     isRecurring: due.isRecurring,
@@ -1125,7 +1299,7 @@ export class TodoistService extends Events {
             if (hasPending) continue;
 
             local.content = task.content;
-            local.isCompleted = task.isCompleted ?? false;
+			local.isCompleted = (task.isCompleted ?? task.is_completed) ?? false;
             const due = this.extractDueFromTask(task);
             local.projectId = this.extractProjectIdFromTask(task);
             local.dueDate = due.dueDate;
@@ -1150,11 +1324,10 @@ export class TodoistService extends Events {
 
     private async refreshFilterIdsViaRest(filter: string, opts?: { triggerRefresh?: boolean }) {
         const now = this.now();
-		const api = this.api;
-		if (!api) return;
-        let tasks: Task[];
+		if (!this.token?.trim()) return;
+	    let tasks: TodoistTask[];
         try {
-            tasks = await api.getTasks({ filter });
+			tasks = await this.getTasksByFilterViaApiV1(filter);
         } catch (error) {
             console.error('Failed to get tasks from Todoist', error);
             return;
@@ -1201,13 +1374,13 @@ export class TodoistService extends Events {
     }
 
     private async flushQueueToRemote(opts?: { triggerRefresh?: boolean }) {
-        if (!this.api) return;
+        if (!this.token?.trim()) return;
 
 		await this.flushQueueToRemoteViaSyncApi(opts);
     }
 
     private async refreshFromRemote(opts?: { triggerRefresh?: boolean }) {
-        if (!this.api) return;
+		if (!this.token?.trim()) return;
 		await this.refreshFromRemoteViaSyncApi(opts);
     }
 
