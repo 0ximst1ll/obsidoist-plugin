@@ -70,7 +70,7 @@ export interface LocalProjectRecord {
     updatedAt: number;
 }
 
-export interface ObsidoistLocalState {
+export interface MarkdoistLocalState {
     schemaVersion: 2;
     tasksById: Record<TaskId, LocalTaskRecord>;
     projectsById: Record<string, LocalProjectRecord>;
@@ -86,7 +86,7 @@ export interface ObsidoistLocalState {
     lastProjectsSyncAt?: number;
 }
 
-export function createDefaultLocalState(): ObsidoistLocalState {
+export function createDefaultLocalState(): MarkdoistLocalState {
     return {
         schemaVersion: 2,
         tasksById: {},
@@ -131,16 +131,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-export function migrateLocalState(raw: unknown): ObsidoistLocalState {
+export function migrateLocalState(raw: unknown): MarkdoistLocalState {
     const base = createDefaultLocalState();
     if (!isRecord(raw)) return base;
 
     const state = raw;
     if (state.schemaVersion === 2) {
-        const s = state as unknown as ObsidoistLocalState;
+        const s = state as unknown as MarkdoistLocalState;
         const shadow = (s as unknown as { lineShadowById?: unknown }).lineShadowById;
         if (!isRecord(shadow)) {
-            (s as unknown as { lineShadowById: ObsidoistLocalState['lineShadowById'] }).lineShadowById = {};
+            (s as unknown as { lineShadowById: MarkdoistLocalState['lineShadowById'] }).lineShadowById = {};
         }
         return s;
     }
@@ -213,16 +213,16 @@ export function migrateLocalState(raw: unknown): ObsidoistLocalState {
         })
         .filter((x): x is SyncOperation => Boolean(x));
 
-    const merged: ObsidoistLocalState = {
+    const merged: MarkdoistLocalState = {
         schemaVersion: 2,
-        tasksById: (isRecord(state.tasksById)) ? (state.tasksById as unknown as ObsidoistLocalState['tasksById']) : {},
-        projectsById: (isRecord(state.projectsById)) ? (state.projectsById as unknown as ObsidoistLocalState['projectsById']) : {},
-        idAliasMap: (isRecord(state.idAliasMap)) ? (state.idAliasMap as unknown as ObsidoistLocalState['idAliasMap']) : {},
-        filterResults: (isRecord(state.filterResults)) ? (state.filterResults as unknown as ObsidoistLocalState['filterResults']) : {},
-        filterLastUsedAt: (isRecord(state.filterLastUsedAt)) ? (state.filterLastUsedAt as unknown as ObsidoistLocalState['filterLastUsedAt']) : {},
+        tasksById: (isRecord(state.tasksById)) ? (state.tasksById as unknown as MarkdoistLocalState['tasksById']) : {},
+        projectsById: (isRecord(state.projectsById)) ? (state.projectsById as unknown as MarkdoistLocalState['projectsById']) : {},
+        idAliasMap: (isRecord(state.idAliasMap)) ? (state.idAliasMap as unknown as MarkdoistLocalState['idAliasMap']) : {},
+        filterResults: (isRecord(state.filterResults)) ? (state.filterResults as unknown as MarkdoistLocalState['filterResults']) : {},
+        filterLastUsedAt: (isRecord(state.filterLastUsedAt)) ? (state.filterLastUsedAt as unknown as MarkdoistLocalState['filterLastUsedAt']) : {},
         queue,
-        status: (isRecord(state.status)) ? (state.status as unknown as ObsidoistLocalState['status']) : {},
-		lineShadowById: (isRecord(state.lineShadowById)) ? (state.lineShadowById as unknown as ObsidoistLocalState['lineShadowById']) : {},
+        status: (isRecord(state.status)) ? (state.status as unknown as MarkdoistLocalState['status']) : {},
+		lineShadowById: (isRecord(state.lineShadowById)) ? (state.lineShadowById as unknown as MarkdoistLocalState['lineShadowById']) : {},
         syncToken: typeof state.syncToken === 'string' ? state.syncToken : undefined,
         lastFullSyncAt: typeof state.lastFullSyncAt === 'number' ? state.lastFullSyncAt : undefined,
         lastProjectsSyncAt: typeof state.lastProjectsSyncAt === 'number' ? state.lastProjectsSyncAt : undefined

@@ -24,7 +24,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => ObsidoistPlugin
+  default: () => MarkdoistPlugin
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian5 = require("obsidian");
@@ -69,7 +69,7 @@ var DEFAULT_SETTINGS = {
   codeblockAutoRefreshSeconds: 60,
   debugLogging: false
 };
-var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
+var MarkdoistSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -139,10 +139,10 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
           await this.plugin.syncManager.syncAfterQueue(file);
         else
           await this.plugin.todoistService.syncNow();
-        new import_obsidian.Notice("Obsidoist: sync completed");
+        new import_obsidian.Notice("Markdoist: sync completed");
         this.display();
       } catch (e) {
-        new import_obsidian.Notice(`Obsidoist: sync failed: ${(_a = e == null ? void 0 : e.message) != null ? _a : e}`);
+        new import_obsidian.Notice(`Markdoist: sync failed: ${(_a = e == null ? void 0 : e.message) != null ? _a : e}`);
       }
     }));
     const status = this.plugin.todoistService.getSyncStatus();
@@ -187,7 +187,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         completedRetentionDays: this.plugin.settings.completedRetentionDays,
         maxFilterCacheEntries: this.plugin.settings.maxFilterCacheEntries
       });
-      new import_obsidian.Notice("Obsidoist: filter cache pruned");
+      new import_obsidian.Notice("Markdoist: filter cache pruned");
       this.display();
     })).addButton((btn) => btn.setButtonText("Prune local ID mappings").onClick(async () => {
       const ok = await confirmWithModal(
@@ -199,10 +199,10 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
         return;
       const aliasKeys = this.plugin.todoistService.getIdAliasMapKeys().filter((x) => x.startsWith("local-"));
       if (aliasKeys.length === 0) {
-        new import_obsidian.Notice("Obsidoist: no local ID mappings to prune");
+        new import_obsidian.Notice("Markdoist: no local ID mappings to prune");
         return;
       }
-      new import_obsidian.Notice("Obsidoist: scanning vault for local ids\u2026");
+      new import_obsidian.Notice("Markdoist: scanning vault for local ids\u2026");
       const aliasKeySet = new Set(aliasKeys);
       const keep = /* @__PURE__ */ new Set();
       for (const id of this.plugin.todoistService.getLocalIdsReferencedInState()) {
@@ -229,7 +229,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
       }
       const keepSet = new Set(this.plugin.todoistService.getIdAliasMapKeys().filter((x) => keep.has(x)));
       const removed = this.plugin.todoistService.pruneIdAliasMap(keepSet);
-      new import_obsidian.Notice(`Obsidoist: pruned ${removed} id mappings`);
+      new import_obsidian.Notice(`Markdoist: pruned ${removed} id mappings`);
       this.display();
     })).addButton((btn) => btn.setButtonText("Clear sync queue").onClick(async () => {
       const ok = await confirmWithModal(
@@ -240,7 +240,7 @@ var ObsidoistSettingTab = class extends import_obsidian.PluginSettingTab {
       if (!ok)
         return;
       this.plugin.todoistService.clearQueue();
-      new import_obsidian.Notice("Obsidoist: sync queue cleared");
+      new import_obsidian.Notice("Markdoist: sync queue cleared");
       this.display();
     }));
     new import_obsidian.Setting(containerEl).setName("Developer").setHeading();
@@ -396,7 +396,7 @@ function setDebugEnabled(enabled) {
 function debug(...args) {
   if (!debugEnabled)
     return;
-  console.debug("[Obsidoist]", ...args);
+  console.debug("[Markdoist]", ...args);
 }
 
 // todoistService.ts
@@ -657,7 +657,7 @@ var TodoistService = class extends import_obsidian2.Events {
       return min === void 0 ? op.nextRetryAt : Math.min(min, op.nextRetryAt);
     }, void 0);
     const lines = [
-      `Obsidoist diagnostics`,
+      `Markdoist diagnostics`,
       `Time: ${new Date().toISOString()}`,
       `Sync API enabled: ${this.useSyncApi}`,
       `Sync token present: ${Boolean(this.localState.syncToken)}`,
@@ -1163,7 +1163,7 @@ var TodoistService = class extends import_obsidian2.Events {
       this.pendingFilterSync = null;
       if (pending) {
         void this.syncFilterNow(pending).catch((e) => {
-          console.error("[Obsidoist] Filter sync failed", e);
+          console.error("[Markdoist] Filter sync failed", e);
         });
       }
     });
@@ -1213,7 +1213,7 @@ var TodoistService = class extends import_obsidian2.Events {
       this.pendingFilterSync = null;
       if (pending && pending !== normalized) {
         void this.syncFilterNow(pending).catch((e) => {
-          console.error("[Obsidoist] Filter sync failed", e);
+          console.error("[Markdoist] Filter sync failed", e);
         });
       }
     });
@@ -1537,7 +1537,7 @@ var TodoistService = class extends import_obsidian2.Events {
             this.localState.status.lastErrorAt = this.now();
             if (!this.notifiedOpIds.has(op.opId)) {
               this.notifiedOpIds.add(op.opId);
-              new import_obsidian2.Notice(`Obsidoist: ${msg2}`);
+              new import_obsidian2.Notice(`Markdoist: ${msg2}`);
             }
             i++;
             continue;
@@ -1560,7 +1560,7 @@ var TodoistService = class extends import_obsidian2.Events {
       this.localState.status.lastErrorAt = this.now();
       if ((op.type === "close" || op.type === "reopen") && !this.notifiedOpIds.has(op.opId)) {
         this.notifiedOpIds.add(op.opId);
-        new import_obsidian2.Notice(`Obsidoist: ${op.type === "close" ? "complete" : "reopen"} failed; will retry. ${msg}`);
+        new import_obsidian2.Notice(`Markdoist: ${op.type === "close" ? "complete" : "reopen"} failed; will retry. ${msg}`);
       }
       i++;
     }
@@ -1756,7 +1756,7 @@ var SyncManager = class {
       try {
         await fn();
       } catch (e) {
-        console.error("[Obsidoist] Sync failed", e);
+        console.error("[Markdoist] Sync failed", e);
       }
     };
     const next = this.syncChain.then(run, run);
@@ -2093,7 +2093,7 @@ var SyncManager = class {
 
 // codeBlock.ts
 var import_obsidian4 = require("obsidian");
-var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
+var MarkdoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
   constructor(app, container, service, syncManager, settings, source, ctx) {
     super(container);
     this.sourceFile = null;
@@ -2136,22 +2136,22 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     }
     this.buildDom();
     void this.refresh().catch((e) => {
-      console.error("[Obsidoist] Initial refresh failed", e);
+      console.error("[Markdoist] Initial refresh failed", e);
     });
     this.startAutoRefreshIfNeeded();
     this.registerEvent(this.service.on("refresh", () => {
       debug("View received refresh event. Re-rendering.");
       if (this.suppressServiceRefresh)
         return;
-      if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
-        this.refreshBtn.addClass("obsidoist-spinning");
+      if (this.refreshBtn && !this.refreshBtn.hasClass("markdoist-spinning")) {
+        this.refreshBtn.addClass("markdoist-spinning");
       }
       void this.refresh().catch((e) => {
-        console.error("[Obsidoist] Refresh failed", e);
+        console.error("[Markdoist] Refresh failed", e);
       }).finally(() => {
         setTimeout(() => {
           var _a;
-          return (_a = this.refreshBtn) == null ? void 0 : _a.removeClass("obsidoist-spinning");
+          return (_a = this.refreshBtn) == null ? void 0 : _a.removeClass("markdoist-spinning");
         }, 500);
       });
       const { filter } = this.parseSourceConfig();
@@ -2215,8 +2215,8 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     this.remoteFetchInFlight = true;
     this.lastRemoteFetchAt = now;
     try {
-      if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
-        this.refreshBtn.addClass("obsidoist-spinning");
+      if (this.refreshBtn && !this.refreshBtn.hasClass("markdoist-spinning")) {
+        this.refreshBtn.addClass("markdoist-spinning");
       }
       this.suppressServiceRefresh = true;
       await this.service.syncFilterNow(filter);
@@ -2224,13 +2224,13 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
         await this.refresh();
       }
     } catch (e) {
-      console.error(`[Obsidoist] Remote filter refresh failed (${source})`, e);
+      console.error(`[Markdoist] Remote filter refresh failed (${source})`, e);
     } finally {
       this.suppressServiceRefresh = false;
       this.remoteFetchInFlight = false;
       setTimeout(() => {
         var _a;
-        return (_a = this.refreshBtn) == null ? void 0 : _a.removeClass("obsidoist-spinning");
+        return (_a = this.refreshBtn) == null ? void 0 : _a.removeClass("markdoist-spinning");
       }, 500);
     }
   }
@@ -2238,7 +2238,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     let current = this.container;
     let targetWrapper = null;
     for (let i = 0; current && i < 10; i++) {
-      current.addClass("obsidoist-code-block-wrap");
+      current.addClass("markdoist-code-block-wrap");
       if (!targetWrapper) {
         const isLikelyWrapper = current.hasClass("code-block-wrap") || current.hasClass("cm-preview-code-block") || current.querySelector(".edit-block-button");
         if (isLikelyWrapper)
@@ -2253,29 +2253,29 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     for (const nativeBtn of nativeButtons) {
       if (!(nativeBtn instanceof HTMLElement))
         continue;
-      nativeBtn.classList.add("obsidoist-native-edit-hidden");
+      nativeBtn.classList.add("markdoist-native-edit-hidden");
     }
   }
   // Build the static DOM structure once
   buildDom() {
     this.container.empty();
-    this.wrapper = this.container.createDiv({ cls: "obsidoist-list" });
-    this.header = this.wrapper.createDiv({ cls: "obsidoist-header" });
-    const title = this.header.createDiv({ cls: "obsidoist-title" });
+    this.wrapper = this.container.createDiv({ cls: "markdoist-list" });
+    this.header = this.wrapper.createDiv({ cls: "markdoist-header" });
+    const title = this.header.createDiv({ cls: "markdoist-title" });
     const { name } = this.parseSourceConfig();
     if (name)
       title.setText(name);
-    const controls = this.header.createDiv({ cls: "obsidoist-controls" });
+    const controls = this.header.createDiv({ cls: "markdoist-controls" });
     this.refreshBtn = controls.createEl("button", {
-      cls: "obsidoist-refresh-btn",
+      cls: "markdoist-refresh-btn",
       attr: { "aria-label": "Refresh tasks" }
     });
     (0, import_obsidian4.setIcon)(this.refreshBtn, "refresh-cw");
     this.refreshBtn.onclick = async () => {
       var _a, _b, _c;
-      if ((_a = this.refreshBtn) == null ? void 0 : _a.hasClass("obsidoist-spinning"))
+      if ((_a = this.refreshBtn) == null ? void 0 : _a.hasClass("markdoist-spinning"))
         return;
-      (_b = this.refreshBtn) == null ? void 0 : _b.addClass("obsidoist-spinning");
+      (_b = this.refreshBtn) == null ? void 0 : _b.addClass("markdoist-spinning");
       try {
         this.suppressServiceRefresh = true;
         const { filter } = this.parseSourceConfig();
@@ -2288,12 +2288,12 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
         this.suppressServiceRefresh = false;
         setTimeout(() => {
           var _a2;
-          return (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("obsidoist-spinning");
+          return (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("markdoist-spinning");
         }, 500);
       }
     };
     this.editBtn = controls.createEl("button", {
-      cls: "obsidoist-edit-btn",
+      cls: "markdoist-edit-btn",
       attr: { "aria-label": "Edit block" }
     });
     (0, import_obsidian4.setIcon)(this.editBtn, "lucide-code-2");
@@ -2308,9 +2308,9 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
         }
       }
     };
-    this.listContainer = this.wrapper.createDiv({ cls: "obsidoist-list-container" });
-    this.listContainer.createDiv({ text: "Loading tasks...", cls: "obsidoist-loading" });
-    this.footer = this.wrapper.createDiv({ cls: "obsidoist-footer" });
+    this.listContainer = this.wrapper.createDiv({ cls: "markdoist-list-container" });
+    this.listContainer.createDiv({ text: "Loading tasks...", cls: "markdoist-loading" });
+    this.footer = this.wrapper.createDiv({ cls: "markdoist-footer" });
     this.footer.setText("Total - tasks");
   }
   // Ensure DOM is healthy before updates
@@ -2325,7 +2325,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
     this.ensureDom();
     try {
       const { filter, name, limit } = this.parseSourceConfig();
-      const titleEl = (_a = this.header) == null ? void 0 : _a.querySelector(".obsidoist-title");
+      const titleEl = (_a = this.header) == null ? void 0 : _a.querySelector(".markdoist-title");
       if (titleEl) {
         titleEl.textContent = name;
       }
@@ -2336,10 +2336,10 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       const tasks = limit ? allTasks.slice(0, limit) : allTasks;
       this.updateView(tasks, allTasks.length);
     } catch (e) {
-      console.error("[Obsidoist] Error fetching tasks:", e);
+      console.error("[Markdoist] Error fetching tasks:", e);
       if (this.listContainer) {
         this.listContainer.empty();
-        const errorDiv = this.listContainer.createDiv({ cls: "obsidoist-error" });
+        const errorDiv = this.listContainer.createDiv({ cls: "markdoist-error" });
         errorDiv.setText("Error loading tasks: " + e.message);
       }
       if (this.footer)
@@ -2349,7 +2349,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
   updateView(tasks, totalCount) {
     var _a;
     this.ensureDom();
-    const loading = (_a = this.listContainer) == null ? void 0 : _a.querySelector(".obsidoist-loading");
+    const loading = (_a = this.listContainer) == null ? void 0 : _a.querySelector(".markdoist-loading");
     if (loading)
       loading.remove();
     if (this.footer) {
@@ -2362,12 +2362,12 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
       return;
     if (tasks.length === 0) {
       this.listContainer.empty();
-      this.listContainer.createDiv({ text: "No tasks found.", cls: "obsidoist-empty" });
+      this.listContainer.createDiv({ text: "No tasks found.", cls: "markdoist-empty" });
       this.ul = null;
       return;
     }
     if (!this.ul || !this.listContainer.contains(this.ul)) {
-      const emptyMsg = this.listContainer.querySelector(".obsidoist-empty");
+      const emptyMsg = this.listContainer.querySelector(".markdoist-empty");
       if (emptyMsg)
         emptyMsg.remove();
       this.ul = this.listContainer.createEl("ul");
@@ -2390,8 +2390,8 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
         } else {
           li.removeClass("is-checked");
         }
-        if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
-          this.refreshBtn.addClass("obsidoist-spinning");
+        if (this.refreshBtn && !this.refreshBtn.hasClass("markdoist-spinning")) {
+          this.refreshBtn.addClass("markdoist-spinning");
         }
         try {
           this.suppressServiceRefresh = true;
@@ -2408,7 +2408,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
           else
             li.removeClass("is-checked");
           this.suppressServiceRefresh = false;
-          (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("obsidoist-spinning");
+          (_a2 = this.refreshBtn) == null ? void 0 : _a2.removeClass("markdoist-spinning");
           return;
         }
         try {
@@ -2430,7 +2430,7 @@ var ObsidoistTaskList = class extends import_obsidian4.MarkdownRenderChild {
           this.suppressServiceRefresh = false;
           setTimeout(() => {
             var _a3;
-            return (_a3 = this.refreshBtn) == null ? void 0 : _a3.removeClass("obsidoist-spinning");
+            return (_a3 = this.refreshBtn) == null ? void 0 : _a3.removeClass("markdoist-spinning");
           }, 500);
         }
       };
@@ -2446,7 +2446,7 @@ var CodeBlockProcessor = class {
     this.settings = settings;
   }
   process(source, el, ctx) {
-    const child = new ObsidoistTaskList(this.app, el, this.service, this.syncManager, this.settings, source, ctx);
+    const child = new MarkdoistTaskList(this.app, el, this.service, this.syncManager, this.settings, source, ctx);
     ctx.addChild(child);
   }
 };
@@ -2464,7 +2464,7 @@ function customDebounce(func, wait) {
     }, wait);
   };
 }
-var ObsidoistPlugin = class extends import_obsidian5.Plugin {
+var MarkdoistPlugin = class extends import_obsidian5.Plugin {
   constructor() {
     super(...arguments);
     this.requestPersist = null;
@@ -2495,8 +2495,8 @@ var ObsidoistPlugin = class extends import_obsidian5.Plugin {
         void this.syncManager.syncDownIfHasLocalIds(file);
     }));
     this.configureAutoSync();
-    this.addSettingTab(new ObsidoistSettingTab(this.app, this));
-    this.registerMarkdownCodeBlockProcessor("obsidoist", (source, el, ctx) => {
+    this.addSettingTab(new MarkdoistSettingTab(this.app, this));
+    this.registerMarkdownCodeBlockProcessor("markdoist", (source, el, ctx) => {
       this.codeBlockProcessor.process(source, el, ctx);
     });
     const active = this.app.workspace.getActiveFile();

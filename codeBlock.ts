@@ -2,17 +2,17 @@ import { MarkdownPostProcessorContext, MarkdownRenderChild, App, Notice, setIcon
 import { debug } from './logger';
 import { TodoistService } from "./todoistService";
 import { SyncManager } from "./syncManager";
-import type { ObsidoistSettings } from "./settings";
+import type { MarkdoistSettings } from "./settings";
 import type { TodoistTask } from './todoistTypes';
 
-export class ObsidoistTaskList extends MarkdownRenderChild {
+export class MarkdoistTaskList extends MarkdownRenderChild {
     app: App;
     service: TodoistService;
     syncManager: SyncManager;
     source: string;
     container: HTMLElement;
     ctx: MarkdownPostProcessorContext;
-	settings: ObsidoistSettings;
+	settings: MarkdoistSettings;
 	private sourceFile: TFile | null = null;
     
     // DOM Elements
@@ -32,7 +32,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 	private remoteFetchInFlight = false;
 	private suppressServiceRefresh = false;
 
-    constructor(app: App, container: HTMLElement, service: TodoistService, syncManager: SyncManager, settings: ObsidoistSettings, source: string, ctx: MarkdownPostProcessorContext) {
+    constructor(app: App, container: HTMLElement, service: TodoistService, syncManager: SyncManager, settings: MarkdoistSettings, source: string, ctx: MarkdownPostProcessorContext) {
         super(container);
         this.app = app;
         this.service = service;
@@ -63,7 +63,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 
         this.buildDom();
         void this.refresh().catch((e) => {
-            console.error('[Obsidoist] Initial refresh failed', e);
+            console.error('[Markdoist] Initial refresh failed', e);
         });
 
 		this.startAutoRefreshIfNeeded();
@@ -74,16 +74,16 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 			if (this.suppressServiceRefresh) return;
             
             // Trigger animation on auto-refresh too
-            if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
-                 this.refreshBtn.addClass("obsidoist-spinning");
+            if (this.refreshBtn && !this.refreshBtn.hasClass("markdoist-spinning")) {
+                 this.refreshBtn.addClass("markdoist-spinning");
             }
             
             void this.refresh()
                 .catch((e) => {
-                    console.error('[Obsidoist] Refresh failed', e);
+                    console.error('[Markdoist] Refresh failed', e);
                 })
                 .finally(() => {
-                    setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+                    setTimeout(() => this.refreshBtn?.removeClass("markdoist-spinning"), 500);
                 });
 
 			const { filter } = this.parseSourceConfig();
@@ -152,8 +152,8 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 		this.remoteFetchInFlight = true;
 		this.lastRemoteFetchAt = now;
 		try {
-			if (this.refreshBtn && !this.refreshBtn.hasClass('obsidoist-spinning')) {
-				this.refreshBtn.addClass('obsidoist-spinning');
+			if (this.refreshBtn && !this.refreshBtn.hasClass('markdoist-spinning')) {
+				this.refreshBtn.addClass('markdoist-spinning');
 			}
 
 			this.suppressServiceRefresh = true;
@@ -162,11 +162,11 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 				await this.refresh();
 			}
 		} catch (e) {
-			console.error(`[Obsidoist] Remote filter refresh failed (${source})`, e);
+			console.error(`[Markdoist] Remote filter refresh failed (${source})`, e);
 		} finally {
 			this.suppressServiceRefresh = false;
 			this.remoteFetchInFlight = false;
-			setTimeout(() => this.refreshBtn?.removeClass('obsidoist-spinning'), 500);
+			setTimeout(() => this.refreshBtn?.removeClass('markdoist-spinning'), 500);
 		}
 	}
 
@@ -175,7 +175,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         let targetWrapper: HTMLElement | null = null;
 
         for (let i = 0; current && i < 10; i++) {
-            current.addClass('obsidoist-code-block-wrap');
+            current.addClass('markdoist-code-block-wrap');
 
             if (!targetWrapper) {
                 const isLikelyWrapper =
@@ -195,36 +195,36 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         const nativeButtons = Array.from(wrapper.querySelectorAll('.edit-block-button'));
         for (const nativeBtn of nativeButtons) {
             if (!(nativeBtn instanceof HTMLElement)) continue;
-            nativeBtn.classList.add('obsidoist-native-edit-hidden');
+            nativeBtn.classList.add('markdoist-native-edit-hidden');
         }
     }
     
     // Build the static DOM structure once
     private buildDom() {
         this.container.empty();
-        this.wrapper = this.container.createDiv({ cls: "obsidoist-list" });
+        this.wrapper = this.container.createDiv({ cls: "markdoist-list" });
         
         // 1. Header (Clean Flexbox Layout)
-        this.header = this.wrapper.createDiv({ cls: "obsidoist-header" });
+        this.header = this.wrapper.createDiv({ cls: "markdoist-header" });
         
-        const title = this.header.createDiv({ cls: "obsidoist-title" });
+        const title = this.header.createDiv({ cls: "markdoist-title" });
         const { name } = this.parseSourceConfig();
         if (name) title.setText(name);
         
         // Controls Container (Right aligned)
-        const controls = this.header.createDiv({ cls: "obsidoist-controls" });
+        const controls = this.header.createDiv({ cls: "markdoist-controls" });
 
         // Refresh Button
         this.refreshBtn = controls.createEl("button", { 
-            cls: "obsidoist-refresh-btn", 
+            cls: "markdoist-refresh-btn", 
             attr: { "aria-label": "Refresh tasks" } 
         });
         setIcon(this.refreshBtn, "refresh-cw");
         
         this.refreshBtn.onclick = async () => {
-            if (this.refreshBtn?.hasClass("obsidoist-spinning")) return; 
+            if (this.refreshBtn?.hasClass("markdoist-spinning")) return; 
             
-            this.refreshBtn?.addClass("obsidoist-spinning");
+            this.refreshBtn?.addClass("markdoist-spinning");
 			try {
 				this.suppressServiceRefresh = true;
 				const { filter } = this.parseSourceConfig();
@@ -234,13 +234,13 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 				await this.refresh();
 			} finally {
 				this.suppressServiceRefresh = false;
-				setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+				setTimeout(() => this.refreshBtn?.removeClass("markdoist-spinning"), 500);
 			}
 		};
 
         // Custom Edit Button
         this.editBtn = controls.createEl("button", { 
-            cls: "obsidoist-edit-btn", 
+            cls: "markdoist-edit-btn", 
             attr: { "aria-label": "Edit block" } 
         });
         setIcon(this.editBtn, "lucide-code-2"); 
@@ -258,11 +258,11 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         };
 
         // 2. List Container
-        this.listContainer = this.wrapper.createDiv({ cls: "obsidoist-list-container" });
-        this.listContainer.createDiv({ text: "Loading tasks...", cls: "obsidoist-loading" });
+        this.listContainer = this.wrapper.createDiv({ cls: "markdoist-list-container" });
+        this.listContainer.createDiv({ text: "Loading tasks...", cls: "markdoist-loading" });
 
         // 3. Footer
-        this.footer = this.wrapper.createDiv({ cls: "obsidoist-footer" });
+        this.footer = this.wrapper.createDiv({ cls: "markdoist-footer" });
         this.footer.setText("Total - tasks");
     }
     
@@ -281,7 +281,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 			const { filter, name, limit } = this.parseSourceConfig();
             
             // Update Title if present
-            const titleEl = this.header?.querySelector('.obsidoist-title');
+            const titleEl = this.header?.querySelector('.markdoist-title');
             if (titleEl) {
                 titleEl.textContent = name; // If empty, it collapses naturally
             }
@@ -296,10 +296,10 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 			this.updateView(tasks, allTasks.length);
 
         } catch (e) {
-            console.error("[Obsidoist] Error fetching tasks:", e);
+            console.error("[Markdoist] Error fetching tasks:", e);
             if (this.listContainer) {
                 this.listContainer.empty();
-                const errorDiv = this.listContainer.createDiv({ cls: "obsidoist-error" });
+                const errorDiv = this.listContainer.createDiv({ cls: "markdoist-error" });
                 errorDiv.setText("Error loading tasks: " + e.message);
             }
             if (this.footer) this.footer.setText("Error");
@@ -310,7 +310,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         this.ensureDom();
         
         // Remove loading indicator if present
-        const loading = this.listContainer?.querySelector(".obsidoist-loading");
+        const loading = this.listContainer?.querySelector(".markdoist-loading");
         if (loading) loading.remove();
         
         // Update Footer
@@ -324,7 +324,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         // Handle empty state
         if (tasks.length === 0) {
             this.listContainer.empty();
-            this.listContainer.createDiv({ text: "No tasks found.", cls: "obsidoist-empty" });
+            this.listContainer.createDiv({ text: "No tasks found.", cls: "markdoist-empty" });
             this.ul = null;
             return;
         }
@@ -332,7 +332,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         // Ensure UL exists
         if (!this.ul || !this.listContainer.contains(this.ul)) {
             // Clear potential empty message
-            const emptyMsg = this.listContainer.querySelector(".obsidoist-empty");
+            const emptyMsg = this.listContainer.querySelector(".markdoist-empty");
             if (emptyMsg) emptyMsg.remove();
             
             this.ul = this.listContainer.createEl("ul");
@@ -361,8 +361,8 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                     li.removeClass("is-checked");
                 }
 
-                if (this.refreshBtn && !this.refreshBtn.hasClass("obsidoist-spinning")) {
-                    this.refreshBtn.addClass("obsidoist-spinning");
+                if (this.refreshBtn && !this.refreshBtn.hasClass("markdoist-spinning")) {
+                    this.refreshBtn.addClass("markdoist-spinning");
                 }
 
                 try {
@@ -378,7 +378,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
                     else li.removeClass("is-checked");
 
 					this.suppressServiceRefresh = false;
-                    this.refreshBtn?.removeClass("obsidoist-spinning");
+                    this.refreshBtn?.removeClass("markdoist-spinning");
                     return;
                 }
 
@@ -399,7 +399,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
 				} finally {
 					debug('Codeblock done', { id: task.id });
 					this.suppressServiceRefresh = false;
-					setTimeout(() => this.refreshBtn?.removeClass("obsidoist-spinning"), 500);
+					setTimeout(() => this.refreshBtn?.removeClass("markdoist-spinning"), 500);
 				}
             };
             
@@ -412,9 +412,9 @@ export class CodeBlockProcessor {
     app: App;
     service: TodoistService;
     syncManager: SyncManager;
-	settings: ObsidoistSettings;
+	settings: MarkdoistSettings;
 
-    constructor(app: App, service: TodoistService, syncManager: SyncManager, settings: ObsidoistSettings) {
+    constructor(app: App, service: TodoistService, syncManager: SyncManager, settings: MarkdoistSettings) {
         this.app = app;
         this.service = service;
         this.syncManager = syncManager;
@@ -423,7 +423,7 @@ export class CodeBlockProcessor {
 
     process(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
         // Pass ctx to the child
-        const child = new ObsidoistTaskList(this.app, el, this.service, this.syncManager, this.settings, source, ctx);
+        const child = new MarkdoistTaskList(this.app, el, this.service, this.syncManager, this.settings, source, ctx);
         ctx.addChild(child);
     }
 }

@@ -6,14 +6,14 @@ export function setDebugEnabled(enabled: boolean) {
 
 export function debug(...args: unknown[]) {
 	if (!debugEnabled) return;
-	console.debug('[Obsidoist]', ...args);
+	console.debug('[Markdoist]', ...args);
 }
 
 export function warn(...args: unknown[]) {
 	if (!debugEnabled) return;
-	console.warn('[Obsidoist]', ...args);
+	console.warn('[Markdoist]', ...args);
 }
 
 export function error(...args: unknown[]) {
-	console.error('[Obsidoist]', ...args);
+	console.error('[Markdoist]', ...args);
 }

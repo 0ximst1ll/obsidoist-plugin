@@ -1,9 +1,9 @@
 import { Plugin, TFile } from 'obsidian';
-import { ObsidoistSettings, DEFAULT_SETTINGS, ObsidoistSettingTab } from './settings';
+import { MarkdoistSettings, DEFAULT_SETTINGS, MarkdoistSettingTab } from './settings';
 import { TodoistService } from './todoistService';
 import { SyncManager } from './syncManager';
 import { CodeBlockProcessor } from './codeBlock';
-import { createDefaultLocalState, migrateLocalState, ObsidoistLocalState } from './localState';
+import { createDefaultLocalState, migrateLocalState, MarkdoistLocalState } from './localState';
 import { setDebugEnabled } from './logger';
 import { debug } from './logger';
 
@@ -21,13 +21,13 @@ function customDebounce<T extends (...args: unknown[]) => unknown>(func: T, wait
     };
 }
 
-export default class ObsidoistPlugin extends Plugin {
-	settings: ObsidoistSettings;
+export default class MarkdoistPlugin extends Plugin {
+	settings: MarkdoistSettings;
 	todoistService: TodoistService;
     syncManager: SyncManager;
     codeBlockProcessor: CodeBlockProcessor;
 
-    localState: ObsidoistLocalState;
+    localState: MarkdoistLocalState;
 
     private requestPersist: (() => void) | null = null;
 
@@ -64,10 +64,10 @@ export default class ObsidoistPlugin extends Plugin {
 		this.configureAutoSync();
 
 		// Add settings tab
-		this.addSettingTab(new ObsidoistSettingTab(this.app, this));
+		this.addSettingTab(new MarkdoistSettingTab(this.app, this));
 
 		// Register code block processor
-		this.registerMarkdownCodeBlockProcessor("obsidoist", (source, el, ctx) => {
+		this.registerMarkdownCodeBlockProcessor("markdoist", (source, el, ctx) => {
             this.codeBlockProcessor.process(source, el, ctx);
 		});
 
@@ -107,8 +107,7 @@ export default class ObsidoistPlugin extends Plugin {
         this.registerEvent(this.app.vault.on('modify', (file) => {
             if (file instanceof TFile && file.extension === 'md') {
 				if (this.syncManager.isLikelyInternalModify(file)) return;
-                // console.log(`[Obsidoist] File modification detected: ${file.path}`);
-                scheduleDebouncedSync(file);
+scheduleDebouncedSync(file);
             }
         }));
 
@@ -153,13 +152,13 @@ export default class ObsidoistPlugin extends Plugin {
         const raw = await this.loadData();
 
         if (raw && typeof raw === 'object' && (raw as { version?: unknown }).version === 2) {
-            const data = raw as { version: 2; settings?: Partial<ObsidoistSettings>; local?: unknown };
+            const data = raw as { version: 2; settings?: Partial<MarkdoistSettings>; local?: unknown };
             this.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings ?? {});
             this.localState = migrateLocalState(data.local);
             return;
         }
 
-        const settings = raw && typeof raw === 'object' ? (raw as Partial<ObsidoistSettings>) : {};
+        const settings = raw && typeof raw === 'object' ? (raw as Partial<MarkdoistSettings>) : {};
         this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
         this.localState = createDefaultLocalState();
     }

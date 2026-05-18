@@ -1,6 +1,6 @@
 import type { TodoistProject, TodoistTask } from './todoistTypes';
 import { Events, Notice, requestUrl } from 'obsidian';
-import { createLocalId, createOperationId, LocalProjectRecord, LocalTaskRecord, ObsidoistLocalState, SyncOperation, TaskId } from './localState';
+import { createLocalId, createOperationId, LocalProjectRecord, LocalTaskRecord, MarkdoistLocalState, SyncOperation, TaskId } from './localState';
 import { debug } from './logger';
 
 type SyncApiResponse = {
@@ -23,7 +23,7 @@ export class TodoistService extends Events {
 
     private useSyncApi = true;
 
-    private localState: ObsidoistLocalState;
+    private localState: MarkdoistLocalState;
     private requestPersist: () => void;
 
     private isSyncRunning = false;
@@ -79,7 +79,7 @@ export class TodoistService extends Events {
 
     private cachePolicy = { completedRetentionDays: 30, maxFilterCacheEntries: 50 };
 
-    constructor(token: string, localState: ObsidoistLocalState, requestPersist: () => void) {
+    constructor(token: string, localState: MarkdoistLocalState, requestPersist: () => void) {
         super();
         this.localState = localState;
         this.requestPersist = requestPersist;
@@ -293,7 +293,7 @@ export class TodoistService extends Events {
         }, undefined as number | undefined);
 
         const lines = [
-            `Obsidoist diagnostics`,
+            `Markdoist diagnostics`,
             `Time: ${new Date().toISOString()}`,
             `Sync API enabled: ${this.useSyncApi}`,
             `Sync token present: ${Boolean(this.localState.syncToken)}`,
@@ -356,7 +356,7 @@ export class TodoistService extends Events {
 		const resolvedFrom = this.resolveId(fromId);
 		if (String(resolvedFrom) !== fromKey) candidates.push(String(resolvedFrom));
 
-		let val: ObsidoistLocalState['lineShadowById'][string] | undefined = undefined;
+		let val: MarkdoistLocalState['lineShadowById'][string] | undefined = undefined;
 		for (const k of candidates) {
 			const v = this.localState.lineShadowById[k];
 			if (v) {
@@ -815,7 +815,7 @@ export class TodoistService extends Events {
                 this.pendingFilterSync = null;
                 if (pending) {
                     void this.syncFilterNow(pending).catch((e) => {
-                        console.error('[Obsidoist] Filter sync failed', e);
+                        console.error('[Markdoist] Filter sync failed', e);
                     });
                 }
             });
@@ -869,7 +869,7 @@ export class TodoistService extends Events {
                 this.pendingFilterSync = null;
                 if (pending && pending !== normalized) {
                     void this.syncFilterNow(pending).catch((e) => {
-                        console.error('[Obsidoist] Filter sync failed', e);
+                        console.error('[Markdoist] Filter sync failed', e);
                     });
                 }
             });
@@ -1206,7 +1206,7 @@ export class TodoistService extends Events {
 						this.localState.status.lastErrorAt = this.now();
 						if (!this.notifiedOpIds.has(op.opId)) {
 							this.notifiedOpIds.add(op.opId);
-							new Notice(`Obsidoist: ${msg}`);
+							new Notice(`Markdoist: ${msg}`);
 						}
 						i++;
 						continue;
@@ -1230,7 +1230,7 @@ export class TodoistService extends Events {
             this.localState.status.lastErrorAt = this.now();
 			if ((op.type === 'close' || op.type === 'reopen') && !this.notifiedOpIds.has(op.opId)) {
 				this.notifiedOpIds.add(op.opId);
-				new Notice(`Obsidoist: ${op.type === 'close' ? 'complete' : 'reopen'} failed; will retry. ${msg}`);
+				new Notice(`Markdoist: ${op.type === 'close' ? 'complete' : 'reopen'} failed; will retry. ${msg}`);
 			}
             i++;
         }
