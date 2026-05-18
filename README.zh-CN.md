@@ -1,8 +1,8 @@
-# Obsidoist
+# Markdoist
 
 [English](README.md)
 
-Obsidoist 是一个在 Obsidian 里用纯文本管理 Todoist 任务的插件。
+Markdoist 是一个在 Obsidian 里用纯文本管理 Todoist 任务的插件。
 
 你可以直接用 Markdown 任务清单来写任务、完成任务，并与 Todoist 双向同步。
 
@@ -71,7 +71,7 @@ Obsidoist 是一个在 Obsidian 里用纯文本管理 Todoist 任务的插件。
 
 在笔记中插入以下代码块：
 
-```obsidoist
+```markdoist
 filter: #ObsidianTest
 limit: 10
 name: 我的任务
@@ -83,7 +83,7 @@ name: 我的任务
 
 ## 设置
 
-Obsidian → 设置 → 第三方插件 → Obsidoist。
+Obsidian → 设置 → 第三方插件 → Markdoist。
 
 ### Basic
 - `Todoist API Token`：在 Todoist 设置 → Integrations 中获取。
@@ -113,13 +113,13 @@ Obsidian → 设置 → 第三方插件 → Obsidoist。
 1）下载最新 Release。
 2）将 `main.js`、`manifest.json`、`styles.css` 复制到：
 
-`<你的 vault>/.obsidian/plugins/obsidoist-plugin/`
+`<你的 vault>/.obsidian/plugins/markdoist/`
 
 3）重启 Obsidian，然后在第三方插件中启用。
 
 ### 从源码安装
 
-把仓库 clone 到 `<你的 vault>/.obsidian/plugins/obsidoist-plugin/`，然后执行：
+把仓库 clone 到 `<你的 vault>/.obsidian/plugins/markdoist/`，然后执行：
 
 ```bash
 npm install

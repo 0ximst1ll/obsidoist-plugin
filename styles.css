@@ -1,4 +1,4 @@
-.obsidoist-list {
+.markdoist-list {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -11,7 +11,7 @@
    Uses flexbox to separate title (left) and controls (right).
    UPDATED: Using flex-end to ensure controls are always on the right even if title is empty.
 */
-.obsidoist-header {
+.markdoist-header {
     display: flex;
     justify-content: flex-end; /* Force everything to the right by default */
     align-items: center;
@@ -25,7 +25,7 @@
     pointer-events: auto;
 }
 
-.obsidoist-title {
+.markdoist-title {
     font-weight: 600;
     color: var(--text-normal);
     /* Push controls to the right if title exists */
@@ -33,7 +33,7 @@
     padding-right: 8px;
 }
 
-.obsidoist-controls {
+.markdoist-controls {
     display: flex;
     align-items: center;
     gap: 4px; /* Space between buttons */
@@ -44,10 +44,10 @@
 /* 
    We STILL need to hide the native button because we are providing our own UI.
 */
-.obsidoist-code-block-wrap .edit-block-button,
-.obsidoist-code-block-wrap > .edit-block-button,
-.obsidoist-code-block-wrap > div > .edit-block-button,
-.cm-preview-code-block.obsidoist-code-block-wrap > .edit-block-button {
+.markdoist-code-block-wrap .edit-block-button,
+.markdoist-code-block-wrap > .edit-block-button,
+.markdoist-code-block-wrap > div > .edit-block-button,
+.cm-preview-code-block.markdoist-code-block-wrap > .edit-block-button {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -58,8 +58,8 @@
     margin: 0 !important;
 }
 
-.code-block-wrap:has(.obsidoist-list) .edit-block-button,
-.cm-preview-code-block:has(.obsidoist-list) .edit-block-button {
+.code-block-wrap:has(.markdoist-list) .edit-block-button,
+.cm-preview-code-block:has(.markdoist-list) .edit-block-button {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -70,7 +70,7 @@
     margin: 0 !important;
 }
 
-.obsidoist-native-edit-hidden {
+.markdoist-native-edit-hidden {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -81,7 +81,7 @@
     margin: 0 !important;
 }
 
-.obsidoist-refresh-btn, .obsidoist-edit-btn {
+.markdoist-refresh-btn, .markdoist-edit-btn {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -109,8 +109,8 @@
 
 /* VISIBILITY RULES: */
 /* 1. Show when hovering the parent code block wrapper (synced) */
-.obsidoist-code-block-wrap:hover .obsidoist-refresh-btn,
-.obsidoist-code-block-wrap:hover .obsidoist-edit-btn {
+.markdoist-code-block-wrap:hover .markdoist-refresh-btn,
+.markdoist-code-block-wrap:hover .markdoist-edit-btn {
     opacity: 1;
     pointer-events: auto;
     transition: opacity 0s;
@@ -118,77 +118,77 @@
 
 /* 2. Show when hovering the header itself (Direct parent backup) */
 /* This fixes the issue where hovering the edit button (child of controls) might lose wrapper context */
-.obsidoist-header:hover .obsidoist-refresh-btn,
-.obsidoist-header:hover .obsidoist-edit-btn,
-.obsidoist-controls:hover .obsidoist-refresh-btn,
-.obsidoist-controls:hover .obsidoist-edit-btn {
+.markdoist-header:hover .markdoist-refresh-btn,
+.markdoist-header:hover .markdoist-edit-btn,
+.markdoist-controls:hover .markdoist-refresh-btn,
+.markdoist-controls:hover .markdoist-edit-btn {
     opacity: 1 !important;
     pointer-events: auto;
     transition: opacity 0s;
 }
 
 /* Fallback: also show on list hover just in case parent class fails */
-.obsidoist-list:hover .obsidoist-refresh-btn,
-.obsidoist-list:hover .obsidoist-edit-btn {
+.markdoist-list:hover .markdoist-refresh-btn,
+.markdoist-list:hover .markdoist-edit-btn {
     opacity: 1;
     pointer-events: auto;
     transition: opacity 0s;
 }
 
 /* Also force visibility if it is spinning/loading */
-.obsidoist-refresh-btn.obsidoist-spinning {
+.markdoist-refresh-btn.markdoist-spinning {
     opacity: 1 !important;
     pointer-events: auto;
     transition: none !important; /* Keep it visible without transition */
 }
 
-.obsidoist-refresh-btn:hover, .obsidoist-edit-btn:hover {
+.markdoist-refresh-btn:hover, .markdoist-edit-btn:hover {
     background-color: var(--background-modifier-hover) !important;
     color: var(--text-normal);
 }
 
-.obsidoist-refresh-btn:focus, .obsidoist-edit-btn:focus {
+.markdoist-refresh-btn:focus, .markdoist-edit-btn:focus {
     box-shadow: none !important;
 }
 
 /* Use custom class for spinning to avoid theme conflicts */
-.obsidoist-refresh-btn.obsidoist-spinning svg {
-    animation: obsidoist-spin 1s linear infinite;
+.markdoist-refresh-btn.markdoist-spinning svg {
+    animation: markdoist-spin 1s linear infinite;
 }
 
 /* Ensure no background on our custom spinning class either */
 /* Redundant safety: also remove background on is-loading just in case */
-.obsidoist-refresh-btn.is-loading,
-.obsidoist-refresh-btn.obsidoist-spinning,
-.obsidoist-edit-btn {
+.markdoist-refresh-btn.is-loading,
+.markdoist-refresh-btn.markdoist-spinning,
+.markdoist-edit-btn {
     background-image: none !important;
     background-color: transparent !important;
 }
 
-@keyframes obsidoist-spin {
+@keyframes markdoist-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
 
-.obsidoist-list-container ul {
+.markdoist-list-container ul {
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
-.obsidoist-list-container li {
+.markdoist-list-container li {
     display: flex;
     align-items: flex-start;
     padding: 4px 0;
     gap: 8px;
 }
 
-.obsidoist-list-container li.is-checked span {
+.markdoist-list-container li.is-checked span {
     text-decoration: line-through;
     color: var(--text-muted);
 }
 
-.obsidoist-footer {
+.markdoist-footer {
     margin-top: 12px;
     padding-top: 8px;
     /* Remove top border */
@@ -199,7 +199,7 @@
     text-align: left;
 }
 
-.obsidoist-error {
+.markdoist-error {
     color: var(--text-error);
     padding: 8px;
     background-color: var(--background-primary-alt);

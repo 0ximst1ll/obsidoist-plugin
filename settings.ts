@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting, Notice, Modal, TFile } from 'obsidian';
-import type ObsidoistPlugin from './main';
+import type MarkdoistPlugin from './main';
 
 function confirmWithModal(app: App, title: string, message: string): Promise<boolean> {
 	return new Promise((resolve) => {
@@ -33,7 +33,7 @@ function confirmWithModal(app: App, title: string, message: string): Promise<boo
 	});
 }
 
-export interface ObsidoistSettings {
+export interface MarkdoistSettings {
 	todoistToken: string;
 	syncTag: string;
     defaultProjectId: string;
@@ -45,7 +45,7 @@ export interface ObsidoistSettings {
 	debugLogging: boolean;
 }
 
-export const DEFAULT_SETTINGS: ObsidoistSettings = {
+export const DEFAULT_SETTINGS: MarkdoistSettings = {
 	todoistToken: '',
 	syncTag: '#todoist',
 	defaultProjectId: '',
@@ -57,10 +57,10 @@ export const DEFAULT_SETTINGS: ObsidoistSettings = {
 	debugLogging: false
 }
 
-export class ObsidoistSettingTab extends PluginSettingTab {
-	plugin: ObsidoistPlugin;
+export class MarkdoistSettingTab extends PluginSettingTab {
+	plugin: MarkdoistPlugin;
 
-	constructor(app: App, plugin: ObsidoistPlugin) {
+	constructor(app: App, plugin: MarkdoistPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -164,10 +164,10 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 						const file = this.plugin.app.workspace.getActiveFile();
 						if (file) await this.plugin.syncManager.syncAfterQueue(file);
 						else await this.plugin.todoistService.syncNow();
-						new Notice('Obsidoist: sync completed');
+						new Notice('Markdoist: sync completed');
 						this.display();
 					} catch (e) {
-						new Notice(`Obsidoist: sync failed: ${e?.message ?? e}`);
+						new Notice(`Markdoist: sync failed: ${e?.message ?? e}`);
 					}
 				}));
 
@@ -240,7 +240,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 						completedRetentionDays: this.plugin.settings.completedRetentionDays,
 						maxFilterCacheEntries: this.plugin.settings.maxFilterCacheEntries
 					});
-					new Notice('Obsidoist: filter cache pruned');
+					new Notice('Markdoist: filter cache pruned');
 					this.display();
 				}))
 			.addButton(btn => btn
@@ -255,11 +255,11 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 					const aliasKeys = this.plugin.todoistService.getIdAliasMapKeys().filter(x => x.startsWith('local-'));
 					if (aliasKeys.length === 0) {
-						new Notice('Obsidoist: no local ID mappings to prune');
+						new Notice('Markdoist: no local ID mappings to prune');
 						return;
 					}
 
-					new Notice('Obsidoist: scanning vault for local ids…');
+					new Notice('Markdoist: scanning vault for local ids…');
 
 					const aliasKeySet = new Set(aliasKeys);
 					const keep = new Set<string>();
@@ -289,7 +289,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 
 					const keepSet = new Set(this.plugin.todoistService.getIdAliasMapKeys().filter(x => keep.has(x)));
 					const removed = this.plugin.todoistService.pruneIdAliasMap(keepSet);
-					new Notice(`Obsidoist: pruned ${removed} id mappings`);
+					new Notice(`Markdoist: pruned ${removed} id mappings`);
 					this.display();
 				}))
 			.addButton(btn => btn
@@ -302,7 +302,7 @@ export class ObsidoistSettingTab extends PluginSettingTab {
 					);
 					if (!ok) return;
 					this.plugin.todoistService.clearQueue();
-					new Notice('Obsidoist: sync queue cleared');
+					new Notice('Markdoist: sync queue cleared');
 					this.display();
 				}));
 

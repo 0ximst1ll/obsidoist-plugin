@@ -1,13 +1,13 @@
 import { App, TFile, Notice } from 'obsidian';
 import { TodoistService } from './todoistService';
-import { ObsidoistSettings } from './settings';
+import { MarkdoistSettings } from './settings';
 import type { TodoistProject } from './todoistTypes';
 import { debug } from './logger';
 
 export class SyncManager {
     app: App;
     service: TodoistService;
-    settings: ObsidoistSettings;
+    settings: MarkdoistSettings;
 
 	private syncChain: Promise<void> = Promise.resolve();
 
@@ -40,7 +40,7 @@ export class SyncManager {
 		return /(?:🗓️?|📅)\s*(\d{4}-\d{2}-\d{2})/;
 	}
 
-    constructor(app: App, service: TodoistService, settings: ObsidoistSettings) {
+    constructor(app: App, service: TodoistService, settings: MarkdoistSettings) {
         this.app = app;
         this.service = service;
         this.settings = settings;
@@ -51,7 +51,7 @@ export class SyncManager {
 			try {
 				await fn();
 			} catch (e) {
-				console.error('[Obsidoist] Sync failed', e);
+				console.error('[Markdoist] Sync failed', e);
 			}
 		};
 		const next = this.syncChain.then(run, run);

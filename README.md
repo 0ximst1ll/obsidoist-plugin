@@ -1,8 +1,8 @@
-# Obsidoist
+# Markdoist
 
 [中文说明](README.zh-CN.md)
 
-Obsidoist is an Obsidian plugin that lets you manage Todoist tasks in plain text.
+Markdoist is an Obsidian plugin that lets you manage Todoist tasks in plain text.
 
 Write tasks as normal Markdown checkboxes, sync them to Todoist, and pull changes back into your notes.
 
@@ -70,7 +70,7 @@ New tasks will be created in `Default Project` if set; otherwise they go to Inbo
 
 Create a code block like this:
 
-```obsidoist
+```markdoist
 filter: #ObsidianTest
 limit: 10
 name: My Tasks
@@ -82,7 +82,7 @@ name: My Tasks
 
 ## Settings
 
-Open Obsidian → Settings → Community plugins → Obsidoist.
+Open Obsidian → Settings → Community plugins → Markdoist.
 
 ### Basic
 - `Todoist API Token`: from Todoist Settings → Integrations.
@@ -112,13 +112,13 @@ Open Obsidian → Settings → Community plugins → Obsidoist.
 1) Download the latest release.
 2) Copy `main.js`, `manifest.json`, `styles.css` into:
 
-`<your vault>/.obsidian/plugins/obsidoist-plugin/`
+`<your vault>/.obsidian/plugins/markdoist/`
 
 3) Restart Obsidian and enable the plugin in Community plugins.
 
 ### From source
 
-Clone this repo into `<your vault>/.obsidian/plugins/obsidoist-plugin/`, then run:
+Clone this repo into `<your vault>/.obsidian/plugins/markdoist/`, then run:
 
 ```bash
 npm install
