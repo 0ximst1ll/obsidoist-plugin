@@ -3,7 +3,7 @@ import { debug } from './logger';
 import { TodoistService } from "./todoistService";
 import { SyncManager } from "./syncManager";
 import type { ObsidoistSettings } from "./settings";
-import { Task } from '@doist/todoist-api-typescript';
+import type { TodoistTask } from './todoistTypes';
 
 export class ObsidoistTaskList extends MarkdownRenderChild {
     app: App;
@@ -306,7 +306,7 @@ export class ObsidoistTaskList extends MarkdownRenderChild {
         }
     }
     
-    private updateView(tasks: Task[], totalCount: number) {
+    private updateView(tasks: TodoistTask[], totalCount: number) {
         this.ensureDom();
         
         // Remove loading indicator if present
