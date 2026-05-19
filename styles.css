@@ -2,64 +2,38 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    /* Ensure relative positioning for absolute children if needed */
     position: relative;
 }
 
-/* 
-   CLEAN HEADER IMPLEMENTATION
-   Uses flexbox to separate title (left) and controls (right).
-   UPDATED: Using flex-end to ensure controls are always on the right even if title is empty.
-*/
 .markdoist-header {
     display: flex;
-    justify-content: flex-end; /* Force everything to the right by default */
+    justify-content: flex-end;
     align-items: center;
-    width: 100%; /* Ensure header takes full width */
-    
-    /* Optional: minimal height to look like a toolbar */
+    width: 100%;
     min-height: 30px;
     margin-bottom: 8px;
-    
-    /* Ensure pointer events work */
     pointer-events: auto;
 }
 
 .markdoist-title {
     font-weight: 600;
     color: var(--text-normal);
-    /* Push controls to the right if title exists */
-    margin-right: auto; 
+    margin-right: auto;
     padding-right: 8px;
 }
 
 .markdoist-controls {
     display: flex;
     align-items: center;
-    gap: 4px; /* Space between buttons */
-    /* Double insurance to push right */
+    gap: 4px;
     margin-left: auto;
 }
 
-/* 
-   We STILL need to hide the native button because we are providing our own UI.
-*/
+/* Hide native Obsidian edit buttons — must use !important to override Obsidian's own hover rules */
 .markdoist-code-block-wrap .edit-block-button,
 .markdoist-code-block-wrap > .edit-block-button,
 .markdoist-code-block-wrap > div > .edit-block-button,
 .cm-preview-code-block.markdoist-code-block-wrap > .edit-block-button {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    width: 0 !important;
-    height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-}
-
-.code-block-wrap:has(.markdoist-list) .edit-block-button,
-.cm-preview-code-block:has(.markdoist-list) .edit-block-button {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -81,7 +55,8 @@
     margin: 0 !important;
 }
 
-.markdoist-refresh-btn, .markdoist-edit-btn {
+.markdoist-refresh-btn,
+.markdoist-edit-btn {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -90,44 +65,26 @@
     cursor: pointer;
     color: var(--text-muted);
     border-radius: 4px;
-    
-    /* Reset layout properties */
     display: flex;
     align-items: center;
     justify-content: center;
     appearance: none;
     -webkit-appearance: none;
-    position: static !important;
+    position: static;
 
     /* Hidden by default */
     opacity: 0;
     pointer-events: none;
-    
-    /* Instant FADE OUT (No delay) */
     transition: opacity 0s;
 }
 
-/* VISIBILITY RULES: */
-/* 1. Show when hovering the parent code block wrapper (synced) */
+/* Show buttons on any ancestor hover — ordered from broadest to most specific */
 .markdoist-code-block-wrap:hover .markdoist-refresh-btn,
-.markdoist-code-block-wrap:hover .markdoist-edit-btn {
-    opacity: 1;
-    pointer-events: auto;
-    transition: opacity 0s;
-}
-
-/* 2. Show when hovering the header itself (Direct parent backup) */
-/* This fixes the issue where hovering the edit button (child of controls) might lose wrapper context */
+.markdoist-code-block-wrap:hover .markdoist-edit-btn,
 .markdoist-header:hover .markdoist-refresh-btn,
 .markdoist-header:hover .markdoist-edit-btn,
 .markdoist-controls:hover .markdoist-refresh-btn,
-.markdoist-controls:hover .markdoist-edit-btn {
-    opacity: 1 !important;
-    pointer-events: auto;
-    transition: opacity 0s;
-}
-
-/* Fallback: also show on list hover just in case parent class fails */
+.markdoist-controls:hover .markdoist-edit-btn,
 .markdoist-list:hover .markdoist-refresh-btn,
 .markdoist-list:hover .markdoist-edit-btn {
     opacity: 1;
@@ -135,29 +92,28 @@
     transition: opacity 0s;
 }
 
-/* Also force visibility if it is spinning/loading */
+/* Keep spinning button visible regardless of hover state */
 .markdoist-refresh-btn.markdoist-spinning {
-    opacity: 1 !important;
+    opacity: 1;
     pointer-events: auto;
-    transition: none !important; /* Keep it visible without transition */
+    transition: none;
 }
 
-.markdoist-refresh-btn:hover, .markdoist-edit-btn:hover {
-    background-color: var(--background-modifier-hover) !important;
+.markdoist-refresh-btn:hover,
+.markdoist-edit-btn:hover {
+    background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }
 
-.markdoist-refresh-btn:focus, .markdoist-edit-btn:focus {
-    box-shadow: none !important;
+.markdoist-refresh-btn:focus,
+.markdoist-edit-btn:focus {
+    box-shadow: none;
 }
 
-/* Use custom class for spinning to avoid theme conflicts */
 .markdoist-refresh-btn.markdoist-spinning svg {
     animation: markdoist-spin 1s linear infinite;
 }
 
-/* Ensure no background on our custom spinning class either */
-/* Redundant safety: also remove background on is-loading just in case */
 .markdoist-refresh-btn.is-loading,
 .markdoist-refresh-btn.markdoist-spinning,
 .markdoist-edit-btn {
@@ -191,11 +147,8 @@
 .markdoist-footer {
     margin-top: 12px;
     padding-top: 8px;
-    /* Remove top border */
-    /* border-top: 1px solid var(--background-modifier-border); */
     font-size: 0.85em;
     color: var(--text-muted);
-    /* Change alignment to left */
     text-align: left;
 }
 

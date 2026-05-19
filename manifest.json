@@ -1,7 +1,7 @@
 {
   "id": "markdoist",
   "name": "Markdoist",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAppVersion": "0.15.0",
   "description": "Task management with Todoist bidirectional sync.",
   "author": "0ximst1ll",
